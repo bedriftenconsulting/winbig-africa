@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Clock, Minus, Plus, Loader2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Loader2, CheckCircle2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { competitions } from "@/lib/competitions";
