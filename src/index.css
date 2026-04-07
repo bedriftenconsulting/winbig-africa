@@ -10,21 +10,26 @@
     --foreground: 0 0% 95%;
 
     --card: 0 0% 8%;
-    --card-foreground: 0 0% 95%;
+    --card-foreground: 0 0% 10%;
 
     --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 95%;
+    --popover-foreground: 0 0% 10%;
 
-    --primary: 45 100% 50%;
-    --primary-foreground: 0 0% 0%;
+    /* RED — used for buttons, CTAs, glows */
+    --primary: 0 80% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    /* GOLD — used for display text in dark hero */
+    --gold: 44 100% 52%;
+    --gold-dim: 44 90% 44%;
 
     --secondary: 0 0% 14%;
     --secondary-foreground: 0 0% 95%;
 
     --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 55%;
+    --muted-foreground: 0 0% 50%;
 
-    --accent: 0 85% 50%;
+    --accent: 22 100% 52%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
@@ -32,58 +37,58 @@
 
     --border: 0 0% 18%;
     --input: 0 0% 18%;
-    --ring: 45 100% 50%;
+    --ring: 0 80% 45%;
 
     --radius: 0.75rem;
 
-    --gold-glow: 0 0 20px hsl(45 100% 50% / 0.4);
-    --card-glow: 0 0 30px hsl(0 85% 50% / 0.15);
+    --red-glow: 0 0 28px hsl(0 80% 45% / 0.5);
+    --card-glow: 0 0 24px hsl(0 80% 45% / 0.18);
 
     --sidebar-background: 0 0% 8%;
     --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 45 100% 50%;
-    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-primary: 0 80% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 0 0% 14%;
     --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 45 100% 50%;
+    --sidebar-ring: 0 80% 45%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground font-body antialiased;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-heading font-bold tracking-tight;
-  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-body antialiased; }
+  h1, h2, h3, h4, h5, h6 { @apply font-heading font-bold tracking-tight; }
 }
 
 @layer utilities {
+  /* Gold text for hero headlines */
+  .text-gold {
+    color: hsl(44 100% 52%);
+  }
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(45 100% 50%), hsl(35 100% 60%));
+    background-image: linear-gradient(135deg, hsl(48 100% 58%), hsl(38 100% 50%));
   }
+  /* Red glow utility */
+  .glow-red { box-shadow: var(--red-glow); }
+  .glow-card { box-shadow: var(--card-glow); }
 
-  .glow-gold {
-    box-shadow: var(--gold-glow);
-  }
-
-  .glow-card {
-    box-shadow: var(--card-glow);
-  }
-
+  /* CTA button glow */
   .btn-glow {
-    box-shadow: 0 0 20px hsl(45 100% 50% / 0.4), 0 0 40px hsl(45 100% 50% / 0.2);
+    box-shadow: 0 0 22px hsl(0 80% 45% / 0.5), 0 0 44px hsl(0 80% 45% / 0.22);
     transition: box-shadow 0.3s ease;
   }
-
   .btn-glow:hover {
-    box-shadow: 0 0 30px hsl(45 100% 50% / 0.6), 0 0 60px hsl(45 100% 50% / 0.3);
+    box-shadow: 0 0 32px hsl(0 80% 45% / 0.7), 0 0 64px hsl(0 80% 45% / 0.35);
+  }
+
+  /* Light-section cards */
+  .section-light {
+    background: hsl(40 25% 94%);
+  }
+  .card-light {
+    background: hsl(0 0% 100%);
+    color: hsl(0 0% 10%);
   }
 }

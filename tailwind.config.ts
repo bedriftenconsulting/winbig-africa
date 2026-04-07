@@ -51,6 +51,7 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        gold: "hsl(var(--gold))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -77,8 +78,8 @@ export default {
           to: { height: "0" },
         },
         "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 20px hsl(45 100% 50% / 0.4)" },
-          "50%": { boxShadow: "0 0 40px hsl(45 100% 50% / 0.7)" },
+          "0%, 100%": { boxShadow: "0 0 22px hsl(0 80% 45% / 0.5)" },
+          "50%": { boxShadow: "0 0 44px hsl(0 80% 45% / 0.75)" },
         },
         "slide-up": {
           from: { opacity: "0", transform: "translateY(20px)" },
