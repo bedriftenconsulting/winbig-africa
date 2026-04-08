@@ -127,21 +127,6 @@ const HeroSection = () => {
               ))}
             </div>
 
-            {/* Ticket progress */}
-            <div className="mt-4 w-full max-w-xs mx-auto md:mx-0">
-              <div className="flex justify-between text-xs text-white/50 mb-1.5">
-                <span>{soldPct}% sold</span>
-                <span>{featured.totalTickets - featured.soldTickets} tickets left</span>
-              </div>
-              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-primary to-orange-500"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${soldPct}%` }}
-                  transition={{ duration: 1.2, delay: 0.9, ease: "easeOut" }}
-                />
-              </div>
-            </div>
           </motion.div>
 
           {/* 3. Buttons — always side by side */}
