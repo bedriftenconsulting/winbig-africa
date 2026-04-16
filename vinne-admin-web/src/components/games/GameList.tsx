@@ -36,6 +36,7 @@ import {
   Pause,
   Search,
   Calendar,
+  Palette,
   Eye,
   Send,
   CheckCircle,
@@ -356,6 +357,15 @@ export function GameList({
                           title="Edit Game"
                         >
                           <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onManagePrizes(game)}
+                          title="Manage Prizes"
+                          className="text-purple-600 hover:text-purple-700"
+                        >
+                          <Palette className="h-4 w-4" />
                         </Button>
 
                         {/* Approval workflow actions based on status */}
