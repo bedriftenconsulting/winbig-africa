@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { GameBrandingDialog } from '@/components/games/GameBrandingDialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +39,6 @@ import {
   Calendar,
   Palette,
   Eye,
-  Send,
   CheckCircle,
   XCircle,
   RefreshCw,
@@ -66,6 +66,7 @@ export function GameList({
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [brandingGame, setBrandingGame] = useState<Game | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     title: string
@@ -139,26 +140,6 @@ export function GameList({
   }
 
   // Mutations for approval workflow
-  const submitForApprovalMutation = useMutation({
-    mutationFn: ({ gameId, notes }: { gameId: string; notes?: string }) =>
-      gameService.submitForApproval(gameId, notes),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['games'] })
-      queryClient.invalidateQueries({ queryKey: ['games-list'] })
-      toast({
-        title: 'Success',
-        description: 'Game submitted for approval',
-      })
-    },
-    onError: () => {
-      toast({
-        title: 'Error',
-        description: 'Failed to submit game for approval',
-        variant: 'destructive',
-      })
-    },
-  })
-
   const approveGameMutation = useMutation({
     mutationFn: ({ gameId, notes }: { gameId: string; notes?: string }) =>
       gameService.approveGame(gameId, notes),
@@ -200,18 +181,6 @@ export function GameList({
   })
 
   const { toast } = useToast()
-
-  const handleSubmitForApproval = (game: Game) => {
-    setConfirmDialog({
-      open: true,
-      title: 'Submit for Approval',
-      description: `Are you sure you want to submit "${game.name}" for approval?`,
-      action: () => {
-        submitForApprovalMutation.mutate({ gameId: game.id })
-        setConfirmDialog({ ...confirmDialog, open: false })
-      },
-    })
-  }
 
   const handleApproveGame = (game: Game) => {
     setConfirmDialog({
@@ -361,25 +330,14 @@ export function GameList({
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => onManagePrizes(game)}
-                          title="Manage Prizes"
+                          onClick={() => setBrandingGame(game)}
+                          title="Game Branding"
                           className="text-purple-600 hover:text-purple-700"
                         >
                           <Palette className="h-4 w-4" />
                         </Button>
 
                         {/* Approval workflow actions based on status */}
-                        {game.status.toUpperCase() === 'DRAFT' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleSubmitForApproval(game)}
-                            title="Submit for Approval"
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            <Send className="h-4 w-4" />
-                          </Button>
-                        )}
                         {(game.status.toUpperCase() === 'SUBMITTED' ||
                           game.status.toUpperCase() === 'FIRST_APPROVED') && (
                           <>
@@ -449,6 +407,12 @@ export function GameList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <GameBrandingDialog
+        isOpen={brandingGame !== null}
+        onClose={() => setBrandingGame(null)}
+        game={brandingGame}
+      />
     </Card>
   )
 }
