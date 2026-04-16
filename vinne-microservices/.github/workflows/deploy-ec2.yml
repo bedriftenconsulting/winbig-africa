@@ -1,0 +1,40 @@
+name: Deploy to EC2
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Docker Images"]
+    types:
+      - completed
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/vinne-microservices
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Logging into GitHub Container Registry..."
+            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ secrets.GHCR_USER }} --password-stdin
+
+            echo "Pulling latest images..."
+            docker compose pull
+
+            echo "Restarting services..."
+            docker compose up -d --remove-orphans
+
+            echo "Cleaning up old images..."
+            docker image prune -f
+
+            echo "Deploy complete!"
