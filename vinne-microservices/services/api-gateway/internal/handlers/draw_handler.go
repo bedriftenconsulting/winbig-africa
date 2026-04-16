@@ -1418,3 +1418,75 @@ func (h *drawHandler) GetDrawTickets(w http.ResponseWriter, r *http.Request) err
 
 	return response.Success(w, http.StatusOK, "Tickets retrieved successfully", result)
 }
+
+// GetPublicWinners returns winning tickets for completed draws (public, no auth)
+// GET /api/v1/public/winners?limit=20
+func (h *drawHandler) GetPublicWinners(w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	limit := int32(20)
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.ParseInt(l, 10, 32); err == nil && v > 0 && v <= 50 {
+			limit = int32(v)
+		}
+	}
+
+	ticketClient, err := h.grpcManager.TicketServiceClient()
+	if err != nil {
+		h.log.Error("Failed to get ticket service client", "error", err)
+		return response.ServiceUnavailableError(w, "Ticket")
+	}
+
+	ticketResp, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+		Filter:   &ticketv1.TicketFilter{Status: "won"},
+		Page:     1,
+		PageSize: limit,
+	})
+	if err != nil {
+		h.log.Error("Failed to list winning tickets", "error", err)
+		return response.InternalError(w, "Failed to retrieve winners")
+	}
+
+	type winner struct {
+		Name         string `json:"name"`
+		Prize        string `json:"prize"`
+		SerialNumber string `json:"serial_number"`
+		DrawDate     string `json:"draw_date"`
+	}
+
+	winners := make([]winner, 0, len(ticketResp.Tickets))
+	for _, t := range ticketResp.Tickets {
+		// Redact phone for privacy: show first 4 digits + ****
+		name := "Winner"
+		if t.CustomerPhone != "" {
+			phone := t.CustomerPhone
+			if len(phone) > 4 {
+				name = phone[:4] + "****"
+			} else {
+				name = phone
+			}
+		}
+
+		drawDate := ""
+		if t.DrawDate != nil {
+			drawDate = t.DrawDate.AsTime().Format("Jan 2, 2006")
+		} else if t.CreatedAt != nil {
+			drawDate = t.CreatedAt.AsTime().Format("Jan 2, 2006")
+		}
+
+		winners = append(winners, winner{
+			Name:         name,
+			Prize:        t.GameName,
+			SerialNumber: t.SerialNumber,
+			DrawDate:     drawDate,
+		})
+	}
+
+	return response.Success(w, http.StatusOK, "Winners retrieved successfully", map[string]interface{}{
+		"winners": winners,
+		"total":   ticketResp.Total,
+	})
+}
+
+

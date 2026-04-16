@@ -257,6 +257,27 @@ func (s *ticketService) IssueTicket(ctx context.Context, req IssueTicketRequest)
 				attribute.String("game.name", gameName),
 				attribute.String("game.type", gameType),
 			)
+
+			// Enforce max_tickets_per_player if this is a player issuing
+			if req.IssuerType == "player" && scheduleResp.Schedule.GameId != "" {
+				gameResp, gameErr := s.gameClient.GetGame(ctx, &gamev1.GetGameRequest{Id: scheduleResp.Schedule.GameId})
+				if gameErr == nil && gameResp != nil && gameResp.Game != nil && gameResp.Game.MaxTicketsPerPlayer > 0 {
+					maxAllowed := int64(gameResp.Game.MaxTicketsPerPlayer)
+					issuerType := "player"
+					issuerID := req.IssuerID
+					schedIDStr := req.GameScheduleID.String()
+					_, existingCount, countErr := s.ticketRepo.List(ctx, models.TicketFilter{
+						IssuerType:     &issuerType,
+						IssuerID:       &issuerID,
+						GameScheduleID: &schedIDStr,
+					}, 1, 1)
+					if countErr == nil && existingCount >= maxAllowed {
+						log.Printf("[WARN] Player %s has reached max tickets (%d) for schedule %s", req.IssuerID, maxAllowed, schedIDStr)
+						return nil, status.Errorf(codes.FailedPrecondition,
+							"maximum tickets per player (%d) reached for this competition", maxAllowed)
+					}
+				}
+			}
 		}
 	} else {
 		log.Printf("[DEBUG] No GameScheduleID provided, skipping Game Service lookup")
@@ -510,70 +531,6 @@ func (s *ticketService) IssueTicket(ctx context.Context, req IssueTicketRequest)
 		)
 
 		span.AddEvent("Retailer wallet debited successfully")
-	}
-
-	// If issuer is a player, debit their wallet BEFORE creating the ticket
-	if req.IssuerType == "player" {
-		span.AddEvent("Debiting player wallet")
-
-		debitReq := &walletpb.DebitPlayerWalletRequest{
-			PlayerId:       req.IssuerID,
-			Amount:         float64(totalAmount),
-			Reference:      serialNumber,
-			Reason:         fmt.Sprintf("Ticket purchase - %s", serialNumber),
-			IdempotencyKey: serialNumber,
-		}
-
-		var debitResp *walletpb.DebitPlayerWalletResponse
-		err := retryWithExponentialBackoff(ctx, 3, func() error {
-			resp, err := s.walletClient.DebitPlayerWallet(ctx, debitReq)
-			if err != nil {
-				// Check error type - don't retry business logic errors
-				if st, ok := status.FromError(err); ok {
-					switch st.Code() {
-					case codes.FailedPrecondition, // Insufficient funds
-						codes.InvalidArgument, // Invalid input
-						codes.NotFound:        // Wallet not found
-						return &permanentError{err}
-					case codes.Unavailable, // Service unavailable
-						codes.DeadlineExceeded, // Timeout
-						codes.Internal:         // Internal error (might be transient)
-						span.AddEvent(fmt.Sprintf("Transient error, will retry: %s", st.Message()))
-						return err
-					default:
-						return &permanentError{err}
-					}
-				}
-				return &permanentError{err}
-			}
-			debitResp = resp
-			return nil
-		})
-
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(otelcodes.Error, "wallet debit failed")
-
-			if st, ok := status.FromError(err); ok {
-				return nil, fmt.Errorf("failed to debit wallet: %s", st.Message())
-			}
-			return nil, fmt.Errorf("failed to debit player wallet: %w", err)
-		}
-
-		if !debitResp.Success {
-			err := fmt.Errorf("wallet debit unsuccessful: %s", debitResp.Message)
-			span.RecordError(err)
-			span.SetStatus(otelcodes.Error, "wallet debit unsuccessful")
-			return nil, err
-		}
-
-		span.SetAttributes(
-			attribute.String("wallet.transaction_id", debitResp.TransactionId),
-			attribute.Float64("wallet.debited_amount", debitResp.DebitedAmount),
-			attribute.Float64("wallet.new_balance", debitResp.NewBalance),
-		)
-
-		span.AddEvent("Player wallet debited successfully")
 	}
 
 	// Begin transaction

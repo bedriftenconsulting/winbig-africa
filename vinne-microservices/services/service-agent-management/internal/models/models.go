@@ -24,9 +24,9 @@ const (
 type OnboardingMethod string
 
 const (
-	OnboardingRandLotteryLtdDirect OnboardingMethod = "RAND_LOTTERY_LTD_DIRECT"
-	OnboardingAgentManaged         OnboardingMethod = "AGENT_ONBOARDED"
-	OnboardingReferral             OnboardingMethod = "REFERRAL"
+	OnboardingWinBigDirect OnboardingMethod = "WINBIG_AFRICA_DIRECT"
+	OnboardingAgentManaged OnboardingMethod = "AGENT_ONBOARDED"
+	OnboardingReferral     OnboardingMethod = "REFERRAL"
 )
 
 // KYC status types

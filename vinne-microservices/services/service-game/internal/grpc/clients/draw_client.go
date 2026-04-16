@@ -93,10 +93,10 @@ func (c *drawServiceClient) CreateDraw(
 	req := &drawpb.CreateDrawRequest{
 		GameId:           game.ID.String(),
 		GameName:         game.Name,
-		GameCode:         game.Code, // Pass game code for efficient ticket querying
+		GameCode:         game.Code,
 		DrawName:         fmt.Sprintf("%s - %s", game.Name, schedule.ScheduledDraw.Format("2006-01-02 15:04")),
 		ScheduledTime:    timestamppb.New(schedule.ScheduledDraw),
-		DrawLocation:     "Automated Scheduler", // Indicates this was auto-created by scheduler
+		DrawLocation:     "Automated Scheduler",
 		TotalTicketsSold: totalTickets,
 		TotalPrizePool:   totalStakes,
 		GameScheduleId:   schedule.ID.String(),

@@ -11,6 +11,9 @@ ARG VERSION=dev
 # Install build dependencies
 RUN apk add --no-cache git make
 
+# Disable Go checksum verification to avoid TLS timeouts
+ENV GONOSUMDB=* GONOSUMCHECK=* GONOPROXY=* GOPROXY=direct
+
 # Set working directory
 WORKDIR /app
 
@@ -19,7 +22,7 @@ COPY . .
 
 # Build the binary with version information
 WORKDIR /app/services/service-notification
-RUN go mod download -x && \
+RUN GOPROXY=direct GONOSUMDB=* go mod download && \
     CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-X main.Version=${VERSION} \
               -X main.GitBranch=${GIT_BRANCH} \

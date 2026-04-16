@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 type DrawRepository interface {
 	Create(ctx context.Context, draw *models.Draw) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Draw, error)
+	GetByGameScheduleID(ctx context.Context, gameScheduleID uuid.UUID) (*models.Draw, error)
 	Update(ctx context.Context, draw *models.Draw) error
 	List(ctx context.Context, gameID *uuid.UUID, status *models.DrawStatus, startDate, endDate *time.Time, page, perPage int) ([]*models.Draw, int64, error)
 	ListCompletedPublic(ctx context.Context, gameID *uuid.UUID, gameCode string, latestOnly bool, startDate, endDate *time.Time, page, perPage int) ([]*models.Draw, int64, error)
@@ -180,6 +182,18 @@ func (s *drawService) CreateDraw(ctx context.Context, request CreateDrawRequest)
 		err := fmt.Errorf("game ID is required")
 		span.SetAttributes(attribute.String("error", err.Error()))
 		return nil, err
+	}
+
+	// Idempotency: if a draw already exists for this game_schedule_id, return the existing one
+	if request.GameScheduleID != uuid.Nil {
+		existing, err := s.drawRepo.GetByGameScheduleID(ctx, request.GameScheduleID)
+		if err != nil {
+			s.logger.Printf("WARNING: failed to check for existing draw for schedule %s: %v", request.GameScheduleID, err)
+		} else if existing != nil {
+			s.logger.Printf("Draw already exists for schedule %s: draw_id=%s (returning existing)", request.GameScheduleID, existing.ID)
+			span.SetAttributes(attribute.String("draw.existing_id", existing.ID.String()))
+			return existing, nil
+		}
 	}
 
 	// Note: We allow past scheduled times because the Game Service scheduler
@@ -896,21 +910,24 @@ func (s *drawService) SubmitVerificationAttempt(ctx context.Context, drawID uuid
 		return nil, 0, fmt.Errorf("number selection stage must be in progress, current status: %s", draw.StageData.StageStatus)
 	}
 
-	// Validate numbers (must be exactly 5 numbers for 5/90 game)
-	if len(numbers) != 5 {
-		return nil, 0, fmt.Errorf("must provide exactly 5 numbers, got %d", len(numbers))
-	}
-
-	// Validate numbers are in range 1-90 and unique
-	seen := make(map[int32]bool)
-	for _, num := range numbers {
-		if num < 1 || num > 90 {
-			return nil, 0, fmt.Errorf("all numbers must be between 1 and 90, got %d", num)
+	// Validate numbers (must be exactly 5 numbers for 5/90 game, or 1 number for raffle)
+	// For raffle: numbers[0] is the 1-based winning ticket index (1 to total_tickets_sold)
+	isRaffle := len(numbers) == 1 && numbers[0] >= 1
+	if !isRaffle {
+		if len(numbers) != 5 {
+			return nil, 0, fmt.Errorf("must provide exactly 5 numbers, got %d", len(numbers))
 		}
-		if seen[num] {
-			return nil, 0, fmt.Errorf("duplicate number found: %d", num)
+		// Validate numbers are in range 1-90 and unique
+		seen := make(map[int32]bool)
+		for _, num := range numbers {
+			if num < 1 || num > 90 {
+				return nil, 0, fmt.Errorf("all numbers must be between 1 and 90, got %d", num)
+			}
+			if seen[num] {
+				return nil, 0, fmt.Errorf("duplicate number found: %d", num)
+			}
+			seen[num] = true
 		}
-		seen[num] = true
 	}
 
 	// Check if already verified
@@ -952,9 +969,10 @@ func (s *drawService) SubmitVerificationAttempt(ctx context.Context, drawID uuid
 		attribute.Int("attempt_number", int(newAttempt.AttemptNumber)),
 	)
 
-	// If this is the 3rd attempt, automatically validate all attempts
-	if newAttempt.AttemptNumber == 3 {
-		s.logger.Printf("Third attempt submitted, automatically validating: draw_id=%s", drawID)
+	// Auto-validate: after 3rd attempt for NLA, or after 1st attempt for raffle
+	shouldAutoValidate := newAttempt.AttemptNumber == 3 || isRaffle
+	if shouldAutoValidate {
+		s.logger.Printf("Auto-validating: draw_id=%s, attempt=%d, isRaffle=%v", drawID, newAttempt.AttemptNumber, isRaffle)
 
 		// Reload draw to get latest data
 		draw, err = s.drawRepo.GetByID(ctx, drawID)
@@ -1009,33 +1027,42 @@ func (s *drawService) ValidateVerificationAttempts(ctx context.Context, drawID u
 		return false, nil, "", fmt.Errorf("draw must be in number selection stage")
 	}
 
-	// Check we have exactly 3 attempts (triple-entry validation)
+	// Check we have exactly 3 attempts (triple-entry validation) OR 1 attempt for raffle
 	attempts := draw.StageData.NumberSelectionData.VerificationAttempts
-	if len(attempts) != 3 {
-		return false, nil, fmt.Sprintf("need exactly 3 verification attempts, currently have %d", len(attempts)), nil
+	isRaffle := len(attempts) > 0 && len(attempts[0].Numbers) == 1
+	if isRaffle {
+		if len(attempts) < 1 {
+			return false, nil, "need at least 1 verification attempt for raffle", nil
+		}
+	} else {
+		if len(attempts) != 3 {
+			return false, nil, fmt.Sprintf("need exactly 3 verification attempts, currently have %d", len(attempts)), nil
+		}
 	}
 
-	// Compare all three attempts - they must all match
+	// Compare attempts — raffle only needs 1, NLA needs 3 matching
 	attempt1 := attempts[0].Numbers
-	attempt2 := attempts[1].Numbers
-	attempt3 := attempts[2].Numbers
 
-	// Log all attempts for debugging
-	s.logger.Printf("Validating verification attempts: draw_id=%s", drawID)
-	s.logger.Printf("  Attempt 1: %v", attempt1)
-	s.logger.Printf("  Attempt 2: %v", attempt2)
-	s.logger.Printf("  Attempt 3: %v", attempt3)
+	if !isRaffle {
+		attempt2 := attempts[1].Numbers
+		attempt3 := attempts[2].Numbers
 
-	if !numbersMatch(attempt1, attempt2) || !numbersMatch(attempt1, attempt3) {
-		errorMsg := "verification attempts do not match - numbers differ"
-		s.logger.Printf("Validation failed: draw_id=%s, reason=%s", drawID, errorMsg)
-		s.logger.Printf("  Attempt 1 vs 2 match: %v", numbersMatch(attempt1, attempt2))
-		s.logger.Printf("  Attempt 1 vs 3 match: %v", numbersMatch(attempt1, attempt3))
-		span.SetAttributes(
-			attribute.String("result", "validation_failed"),
-			attribute.String("reason", "numbers_mismatch"),
-		)
-		return false, nil, errorMsg, nil
+		s.logger.Printf("Validating verification attempts: draw_id=%s", drawID)
+		s.logger.Printf("  Attempt 1: %v", attempt1)
+		s.logger.Printf("  Attempt 2: %v", attempt2)
+		s.logger.Printf("  Attempt 3: %v", attempt3)
+
+		if !numbersMatch(attempt1, attempt2) || !numbersMatch(attempt1, attempt3) {
+			errorMsg := "verification attempts do not match - numbers differ"
+			s.logger.Printf("Validation failed: draw_id=%s, reason=%s", drawID, errorMsg)
+			span.SetAttributes(
+				attribute.String("result", "validation_failed"),
+				attribute.String("reason", "numbers_mismatch"),
+			)
+			return false, nil, errorMsg, nil
+		}
+	} else {
+		s.logger.Printf("Raffle draw: single verification attempt accepted: draw_id=%s, code=%v", drawID, attempt1)
 	}
 
 	// All 3 attempts match - mark as verified
@@ -1144,6 +1171,89 @@ func (s *drawService) ValidateVerificationAttempts(ctx context.Context, drawID u
 		s.logger.Printf("[SERVICE] Winning numbers to match against: %v", draw.WinningNumbers)
 		s.logger.Printf("[SERVICE] Starting ticket-by-ticket processing...")
 
+		// ── RAFFLE: index-based winner selection ──────────────────────────────
+		// For raffle draws, winning_numbers[0] is the 1-based position of the
+		// winning ticket in the fetched list. No bet engine matching needed.
+		isRaffleCalc := len(draw.WinningNumbers) == 1 &&
+			len(listResp.Tickets) > 0 &&
+			len(listResp.Tickets[0].BetLines) > 0 &&
+			NormalizeBetType(listResp.Tickets[0].BetLines[0].BetType) == BetTypeRaffle
+
+		if isRaffleCalc {
+			winningIndex := int(draw.WinningNumbers[0]) - 1 // convert 1-based to 0-based
+			s.logger.Printf("[RAFFLE] Winning ticket index (0-based): %d out of %d tickets", winningIndex, len(listResp.Tickets))
+
+			var winningUpdates []*ticketv1.TicketStatusUpdate
+			var losingUpdates []*ticketv1.TicketStatusUpdate
+
+			for i, ticket := range listResp.Tickets {
+				if i == winningIndex {
+					s.logger.Printf("[RAFFLE] *** WINNER: Ticket %d, Serial=%s ***", i+1, ticket.SerialNumber)
+					winningTicketsCount++
+					// Physical prize — no cash winning amount
+
+					winningTickets = append(winningTickets, models.WinningTicketDetail{
+						TicketID:      ticket.Id,
+						SerialNumber:  ticket.SerialNumber,
+						RetailerID:    ticket.IssuerId,
+						Numbers:       []int32{draw.WinningNumbers[0]},
+						BetType:       BetTypeRaffle,
+						StakeAmount:   ticket.TotalAmount,
+						WinningAmount: 0, // Physical prize — cash value set at payout stage
+						MatchesCount:  1,
+						IsBigWin:      false,
+					})
+
+					winningTierMap[BetTypeRaffle] = &models.WinningTier{
+						BetType:      BetTypeRaffle,
+						WinnersCount: 1,
+						TotalAmount:  0, // Physical prize
+					}
+
+					winningUpdates = append(winningUpdates, &ticketv1.TicketStatusUpdate{
+						TicketId:      ticket.Id,
+						Status:        "won",
+						WinningAmount: 0, // Physical prize — cash value set at payout stage
+						Matches:       1,
+						PrizeTier:     BetTypeRaffle,
+					})
+				} else {
+					losingUpdates = append(losingUpdates, &ticketv1.TicketStatusUpdate{
+						TicketId:      ticket.Id,
+						Status:        "lost",
+						WinningAmount: 0,
+					})
+				}
+			}
+
+			// Batch update winners
+			if len(winningUpdates) > 0 {
+				_, err := client.UpdateTicketStatuses(ctx, &ticketv1.UpdateTicketStatusesRequest{
+					Updates: winningUpdates,
+					DrawId:  drawID.String(),
+				})
+				if err != nil {
+					s.logger.Printf("[RAFFLE] ERROR: Failed to update winning ticket: %v", err)
+				} else {
+					s.logger.Printf("[RAFFLE] Winning ticket status updated to 'won'")
+				}
+			}
+			// Batch update losers
+			if len(losingUpdates) > 0 {
+				_, err := client.UpdateTicketStatuses(ctx, &ticketv1.UpdateTicketStatusesRequest{
+					Updates: losingUpdates,
+					DrawId:  drawID.String(),
+				})
+				if err != nil {
+					s.logger.Printf("[RAFFLE] ERROR: Failed to update losing tickets: %v", err)
+				}
+			}
+
+			// Skip the NLA per-ticket loop below
+			goto storeResults
+		}
+		// ── END RAFFLE ────────────────────────────────────────────────────────
+
 		// Initialize arrays for batch ticket status updates (to avoid N+1 problem)
 		var winningUpdates []*ticketv1.TicketStatusUpdate
 		var losingUpdates []*ticketv1.TicketStatusUpdate
@@ -1169,6 +1279,20 @@ func (s *drawService) ValidateVerificationAttempts(ctx context.Context, drawID u
 			s.logger.Printf("[SERVICE] Converting proto bet lines to engine format...")
 			betLines := convertTicketBetLines(ticket.BetLines)
 			s.logger.Printf("[SERVICE] Conversion completed - %d bet lines converted", len(betLines))
+
+			// For RAFFLE tickets, inject the verification code so the engine can match it
+			if len(betLines) > 0 && NormalizeBetType(betLines[0].BetType) == BetTypeRaffle {
+				verificationCode := int32(0)
+				if ticket.SecurityFeatures != nil {
+					if code, err2 := strconv.ParseInt(ticket.SecurityFeatures.VerificationCode, 10, 32); err2 == nil {
+						verificationCode = int32(code)
+					}
+				}
+				for _, bl := range betLines {
+					bl.RaffleVerificationCode = verificationCode
+				}
+				s.logger.Printf("[SERVICE] RAFFLE ticket: injected verification code %d", verificationCode)
+			}
 
 			// DEBUG: Log converted bet lines AFTER conversion
 			s.logger.Printf("[SERVICE] Converted bet lines for engine (AFTER conversion):")
@@ -1387,6 +1511,7 @@ func (s *drawService) ValidateVerificationAttempts(ctx context.Context, drawID u
 	}
 
 	// Convert tier map to slice
+	storeResults:
 	s.logger.Printf("[SERVICE] ========================================")
 	s.logger.Printf("[SERVICE] AGGREGATING WINNING TIERS")
 	var winningTiers []models.WinningTier

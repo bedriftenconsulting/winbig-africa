@@ -360,23 +360,26 @@ export const drawService = {
     return response.data
   },
 
-  // Record physical draw numbers
-  async recordPhysicalDraw(
+  // Execute winner selection using Google RNG or Cryptographic RNG
+  async executeWinnerSelection(
     id: string,
     data: {
-      numbers: number[]
-      nla_draw_reference?: string
-      draw_location?: string
-      nla_official_signature?: string
+      selection_method: 'google_rng' | 'cryptographic_rng'
+      max_winners?: number
+      audit_enabled?: boolean
     }
   ) {
-    const response = await api.post(`/admin/draws/${id}/execute`, {
-      action: 'submit_verification',
-      numbers: data.numbers,
-      nla_draw_reference: data.nla_draw_reference,
-      draw_location: data.draw_location,
-      nla_official_signature: data.nla_official_signature,
+    const response = await api.post(`/admin/draws/${id}/execute-winner-selection`, {
+      selection_method: data.selection_method,
+      max_winners: data.max_winners || 1,
+      audit_enabled: data.audit_enabled !== false,
     })
+    return response.data
+  },
+
+  // Send pre-draw email notification
+  async sendPreDrawNotification(id: string) {
+    const response = await api.post(`/admin/draws/${id}/pre-draw-notification`)
     return response.data
   },
 

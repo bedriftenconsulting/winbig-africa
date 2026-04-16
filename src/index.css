@@ -10,10 +10,10 @@
     --foreground: 0 0% 95%;
 
     --card: 0 0% 8%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 0 0% 95%;
 
     --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 0 0% 95%;
 
     /* RED — used for buttons, CTAs, glows */
     --primary: 0 80% 45%;

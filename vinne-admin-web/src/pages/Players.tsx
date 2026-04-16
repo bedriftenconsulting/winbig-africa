@@ -21,7 +21,31 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { playerService } from '@/services/players'
-import { Search, Eye } from 'lucide-react'
+import { Search, Eye, Users, UserCheck, UserX, ShieldOff, type LucideIcon } from 'lucide-react'
+
+type CardColor = 'indigo' | 'emerald' | 'amber' | 'red'
+interface StatCard { label: string; value: string; sub: string; icon: LucideIcon; color: CardColor }
+const colorMap: Record<CardColor, { icon: string }> = {
+  indigo:  { icon: 'bg-indigo-100 text-indigo-600' },
+  emerald: { icon: 'bg-emerald-100 text-emerald-600' },
+  amber:   { icon: 'bg-amber-100 text-amber-600' },
+  red:     { icon: 'bg-red-100 text-red-600' },
+}
+function StatKPICard({ label, value, sub, icon: Icon, color }: StatCard) {
+  const c = colorMap[color]
+  return (
+    <div className="bg-card rounded-lg p-5 shadow-card hover:shadow-card-hover transition-shadow duration-150">
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-xs font-medium tracking-wide uppercase text-muted-foreground">{label}</p>
+        <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${c.icon}`}>
+          <Icon className="h-3.5 w-3.5" />
+        </div>
+      </div>
+      <p className="text-2xl font-semibold tracking-tight font-mono tabular-nums text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-2">{sub}</p>}
+    </div>
+  )
+}
 
 export default function Players() {
   const [page, setPage] = useState(1)
@@ -77,61 +101,45 @@ export default function Players() {
   }
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-2xl sm:text-3xl font-bold">Players</h1>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Players</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage registered players</p>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
-            <h3 className="text-xs sm:text-sm font-medium">Total Players</h3>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">{playersData?.total || 0}</div>
-            <p className="text-xs text-muted-foreground">Registered</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
-            <h3 className="text-xs sm:text-sm font-medium">Active Players</h3>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">
-              {Array.isArray(playersData?.players)
-                ? playersData.players.filter(p => p.status === 'ACTIVE').length
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Active</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
-            <h3 className="text-xs sm:text-sm font-medium">Suspended</h3>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">
-              {Array.isArray(playersData?.players)
-                ? playersData.players.filter(p => p.status === 'SUSPENDED').length
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Suspended</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-6 sm:pb-2">
-            <h3 className="text-xs sm:text-sm font-medium">Banned</h3>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">
-              {Array.isArray(playersData?.players)
-                ? playersData.players.filter(p => p.status === 'BANNED').length
-                : 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Banned</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatKPICard
+          label="Total Players"
+          value={String(playersData?.total || 0)}
+          sub="Registered"
+          icon={Users}
+          color="indigo"
+        />
+        <StatKPICard
+          label="Active"
+          value={String(Array.isArray(playersData?.players) ? playersData.players.filter(p => p.status === 'ACTIVE').length : 0)}
+          sub="Active players"
+          icon={UserCheck}
+          color="emerald"
+        />
+        <StatKPICard
+          label="Suspended"
+          value={String(Array.isArray(playersData?.players) ? playersData.players.filter(p => p.status === 'SUSPENDED').length : 0)}
+          sub="Suspended players"
+          icon={UserX}
+          color="amber"
+        />
+        <StatKPICard
+          label="Banned"
+          value={String(Array.isArray(playersData?.players) ? playersData.players.filter(p => p.status === 'BANNED').length : 0)}
+          sub="Banned players"
+          icon={ShieldOff}
+          color="red"
+        />
       </div>
 
       <Card>

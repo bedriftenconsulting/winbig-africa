@@ -31,7 +31,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination'
 import { DatePicker } from '@/components/ui/date-picker'
-import { Trophy, Search, Clock, AlertCircle, Filter } from 'lucide-react'
+import { Trophy, Search, Clock, AlertCircle, Filter, CheckCircle, type LucideIcon } from 'lucide-react'
 import { drawService, type Draw } from '@/services/draws'
 import { gameService } from '@/services/games'
 import { formatCurrency } from '@/lib/utils'
@@ -139,17 +139,17 @@ export default function Draws() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'scheduled':
-        return <Badge className="bg-blue-100 text-blue-800">Scheduled</Badge>
+        return <Badge variant="outline">Scheduled</Badge>
       case 'in_progress':
-        return <Badge className="bg-orange-100 text-orange-800">In Progress</Badge>
+        return <Badge variant="secondary">In Progress</Badge>
       case 'active':
-        return <Badge className="bg-green-100 text-green-800">Active</Badge>
+        return <Badge variant="secondary">Active</Badge>
       case 'closed':
-        return <Badge className="bg-yellow-100 text-yellow-800">Closed</Badge>
+        return <Badge variant="outline">Closed</Badge>
       case 'completed':
-        return <Badge className="bg-purple-100 text-purple-800">Completed</Badge>
+        return <Badge variant="outline">Completed</Badge>
       case 'cancelled':
-        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>
+        return <Badge variant="destructive">Cancelled</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
     }
@@ -160,7 +160,7 @@ export default function Draws() {
     totalDraws: totalCount,
     activeDraws: draws.filter((d: Draw) => protoStatusToString(d.status) === 'in_progress').length,
     closedDraws: draws.filter((d: Draw) => protoStatusToString(d.status) === 'completed').length,
-    totalStakes: draws.reduce((sum: number, d: Draw) => sum + (d.total_stakes || 0), 0),
+    totalTickets: draws.reduce((sum: number, d: Draw) => sum + (d.total_tickets_sold || 0), 0),
   }
 
   // Filter draws by search term locally
@@ -176,55 +176,70 @@ export default function Draws() {
       })
     : draws
 
+  type CardColor = 'indigo' | 'emerald' | 'sky' | 'violet'
+  interface StatCard { label: string; value: string; sub: string; icon: LucideIcon; color: CardColor }
+  const colorMap: Record<CardColor, { icon: string; label: string }> = {
+    indigo:  { icon: 'bg-indigo-100 text-indigo-600',  label: 'text-indigo-600' },
+    emerald: { icon: 'bg-emerald-100 text-emerald-600', label: 'text-emerald-600' },
+    sky:     { icon: 'bg-sky-100 text-sky-600',        label: 'text-sky-600' },
+    violet:  { icon: 'bg-violet-100 text-violet-600',  label: 'text-violet-600' },
+  }
+  function StatKPICard({ label, value, sub, icon: Icon, color }: StatCard) {
+    const c = colorMap[color]
+    return (
+      <div className="bg-card rounded-lg p-5 shadow-card hover:shadow-card-hover transition-shadow duration-150">
+        <div className="flex items-start justify-between mb-3">
+          <p className="text-xs font-medium tracking-wide uppercase text-muted-foreground">{label}</p>
+          <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${c.icon}`}>
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+        </div>
+        <p className="text-2xl font-semibold tracking-tight font-mono tabular-nums text-foreground">{value}</p>
+        {sub && <p className="text-xs text-muted-foreground mt-2">{sub}</p>}
+      </div>
+    )
+  }
+
   return (
-    <div className="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Draw Management</h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
-          Monitor and manage lottery draw executions
-        </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">Draw Management</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Monitor and manage lottery draw executions</p>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Total Draws</CardTitle>
-            <Trophy className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">{stats.totalDraws}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Active</CardTitle>
-            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">{stats.activeDraws}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Closed (Pending)</CardTitle>
-            <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold">{stats.closedDraws}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">Total Stakes</CardTitle>
-            <Trophy className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            <div className="text-lg sm:text-2xl font-bold truncate">
-              {formatCurrency(stats.totalStakes)}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatKPICard
+          label="Total Draws"
+          value={String(stats.totalDraws)}
+          sub="All draws"
+          icon={Trophy}
+          color="indigo"
+        />
+        <StatKPICard
+          label="In Progress"
+          value={String(stats.activeDraws)}
+          sub="Currently running"
+          icon={Clock}
+          color="emerald"
+        />
+        <StatKPICard
+          label="Completed"
+          value={String(stats.closedDraws)}
+          sub="Finished draws"
+          icon={CheckCircle}
+          color="sky"
+        />
+        <StatKPICard
+          label="Total Tickets"
+          value={stats.totalTickets.toLocaleString()}
+          sub="Current page"
+          icon={AlertCircle}
+          color="violet"
+        />
       </div>
 
       {/* Draws Management */}
@@ -317,9 +332,6 @@ export default function Draws() {
                   <TableHead className="text-xs sm:text-sm hidden lg:table-cell">
                     Tickets Sold
                   </TableHead>
-                  <TableHead className="text-xs sm:text-sm hidden lg:table-cell">
-                    Total Stakes
-                  </TableHead>
                   <TableHead className="text-xs sm:text-sm hidden xl:table-cell">
                     Winning Numbers
                   </TableHead>
@@ -330,7 +342,7 @@ export default function Draws() {
               <TableBody>
                 {filteredDraws.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-12">
+                    <TableCell colSpan={8} className="text-center py-12">
                       <Trophy className="mx-auto h-12 w-12 text-gray-400" />
                       <h3 className="mt-2 text-sm font-medium text-gray-900">No draws found</h3>
                       <p className="mt-1 text-sm text-gray-500">
@@ -379,9 +391,6 @@ export default function Draws() {
                         </TableCell>
                         <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
                           {(draw.total_tickets_sold || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-xs sm:text-sm hidden lg:table-cell">
-                          {formatCurrency(draw.total_stakes || 0)}
                         </TableCell>
                         <TableCell className="text-xs sm:text-sm hidden xl:table-cell">
                           {draw.winning_numbers && draw.winning_numbers.length > 0 ? (

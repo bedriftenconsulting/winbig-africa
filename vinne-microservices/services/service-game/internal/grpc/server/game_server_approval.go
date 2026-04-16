@@ -27,7 +27,7 @@ func NewGameServerWithApproval(
 	scheduleService services.GameScheduleService,
 ) *GameServerWithApproval {
 	return &GameServerWithApproval{
-		GameServerMinimal: NewGameServerMinimal(gameService, scheduleService),
+		GameServerMinimal: NewGameServerMinimal(gameService, scheduleService, nil),
 		approvalService:   approvalService,
 	}
 }

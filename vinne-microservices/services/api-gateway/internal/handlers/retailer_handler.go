@@ -159,7 +159,7 @@ func (h *retailerHandlerImpl) CreateRetailer(w http.ResponseWriter, r *http.Requ
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	resp, authCreated, err := h.createRetailerCore(ctx, req, userID, "RAND_LOTTERY_LTD_DIRECT", true, pin)
+	resp, authCreated, err := h.createRetailerCore(ctx, req, userID, "WINBIG_AFRICA_DIRECT", true, pin)
 	if err != nil {
 		return h.handleGRPCError(w, err)
 	}

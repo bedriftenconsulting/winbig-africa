@@ -349,7 +349,7 @@ func main() {
 
 	// Register game service with scheduling support (approval workflow removed)
 	logger.Println("Registering game service handler...")
-	gameHandler := grpcserver.NewGameServerMinimal(gameService, scheduleService)
+	gameHandler := grpcserver.NewGameServerMinimal(gameService, scheduleService, drawClient)
 	pb.RegisterGameServiceServer(grpcServer, gameHandler)
 	logger.Println("Game service registered (approval workflow disabled)")
 

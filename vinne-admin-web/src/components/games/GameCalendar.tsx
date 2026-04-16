@@ -282,12 +282,12 @@ export function GameCalendar({ game, viewMode = 'week' }: GameCalendarProps) {
           </div>
           <div className="flex items-center gap-2">
             {!game && (
-              <Select value={selectedGame} onValueChange={setSelectedGame}>
+              <Select value={selectedGame || "all"} onValueChange={(value) => setSelectedGame(value === "all" ? "" : value)}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="All Games" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Games</SelectItem>
+                  <SelectItem value="all">All Games</SelectItem>
                   {games.map(g => (
                     <SelectItem key={g.id} value={g.id}>
                       {g.name}

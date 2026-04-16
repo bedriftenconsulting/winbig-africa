@@ -9,14 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WinsRouteImport } from './routes/wins'
+import { Route as TransactionsRouteImport } from './routes/transactions'
+import { Route as PlayersRouteImport } from './routes/players'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as DrawsRouteImport } from './routes/draws'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ScheduleScheduleIdRouteImport } from './routes/schedule.$scheduleId'
+import { Route as GamesCreateRouteImport } from './routes/games/create'
 import { Route as GameGameIdRouteImport } from './routes/game.$gameId'
 import { Route as DrawDrawIdRouteImport } from './routes/draw.$drawId'
+import { Route as ConfigWinnerSelectionRouteImport } from './routes/config/winner-selection'
 import { Route as AdminWalletCreditsRouteImport } from './routes/admin.wallet-credits'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminTransactionsRouteImport } from './routes/admin.transactions'
@@ -31,6 +36,21 @@ import { Route as AdminRetailerRetailerIdRouteImport } from './routes/admin.reta
 import { Route as AdminPlayerPlayerIdRouteImport } from './routes/admin.player.$playerId'
 import { Route as AdminAgentAgentIdRouteImport } from './routes/admin.agent.$agentId'
 
+const WinsRoute = WinsRouteImport.update({
+  id: '/wins',
+  path: '/wins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransactionsRoute = TransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayersRoute = PlayersRouteImport.update({
+  id: '/players',
+  path: '/players',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -61,6 +81,11 @@ const ScheduleScheduleIdRoute = ScheduleScheduleIdRouteImport.update({
   path: '/schedule/$scheduleId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GamesCreateRoute = GamesCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => GamesRoute,
+} as any)
 const GameGameIdRoute = GameGameIdRouteImport.update({
   id: '/game/$gameId',
   path: '/game/$gameId',
@@ -69,6 +94,11 @@ const GameGameIdRoute = GameGameIdRouteImport.update({
 const DrawDrawIdRoute = DrawDrawIdRouteImport.update({
   id: '/draw/$drawId',
   path: '/draw/$drawId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfigWinnerSelectionRoute = ConfigWinnerSelectionRouteImport.update({
+  id: '/config/winner-selection',
+  path: '/config/winner-selection',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminWalletCreditsRoute = AdminWalletCreditsRouteImport.update({
@@ -141,8 +171,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
-  '/games': typeof GamesRoute
+  '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
+  '/players': typeof PlayersRoute
+  '/transactions': typeof TransactionsRoute
+  '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
@@ -153,8 +186,10 @@ export interface FileRoutesByFullPath {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wallet-credits': typeof AdminWalletCreditsRoute
+  '/config/winner-selection': typeof ConfigWinnerSelectionRoute
   '/draw/$drawId': typeof DrawDrawIdRoute
   '/game/$gameId': typeof GameGameIdRoute
+  '/games/create': typeof GamesCreateRoute
   '/schedule/$scheduleId': typeof ScheduleScheduleIdRoute
   '/admin/agent/$agentId': typeof AdminAgentAgentIdRoute
   '/admin/player/$playerId': typeof AdminPlayerPlayerIdRoute
@@ -164,8 +199,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
-  '/games': typeof GamesRoute
+  '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
+  '/players': typeof PlayersRoute
+  '/transactions': typeof TransactionsRoute
+  '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
@@ -176,8 +214,10 @@ export interface FileRoutesByTo {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wallet-credits': typeof AdminWalletCreditsRoute
+  '/config/winner-selection': typeof ConfigWinnerSelectionRoute
   '/draw/$drawId': typeof DrawDrawIdRoute
   '/game/$gameId': typeof GameGameIdRoute
+  '/games/create': typeof GamesCreateRoute
   '/schedule/$scheduleId': typeof ScheduleScheduleIdRoute
   '/admin/agent/$agentId': typeof AdminAgentAgentIdRoute
   '/admin/player/$playerId': typeof AdminPlayerPlayerIdRoute
@@ -188,8 +228,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
-  '/games': typeof GamesRoute
+  '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
+  '/players': typeof PlayersRoute
+  '/transactions': typeof TransactionsRoute
+  '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
@@ -200,8 +243,10 @@ export interface FileRoutesById {
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/wallet-credits': typeof AdminWalletCreditsRoute
+  '/config/winner-selection': typeof ConfigWinnerSelectionRoute
   '/draw/$drawId': typeof DrawDrawIdRoute
   '/game/$gameId': typeof GameGameIdRoute
+  '/games/create': typeof GamesCreateRoute
   '/schedule/$scheduleId': typeof ScheduleScheduleIdRoute
   '/admin/agent/$agentId': typeof AdminAgentAgentIdRoute
   '/admin/player/$playerId': typeof AdminPlayerPlayerIdRoute
@@ -215,6 +260,9 @@ export interface FileRouteTypes {
     | '/draws'
     | '/games'
     | '/login'
+    | '/players'
+    | '/transactions'
+    | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
     | '/admin/permissions'
@@ -225,8 +273,10 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/users'
     | '/admin/wallet-credits'
+    | '/config/winner-selection'
     | '/draw/$drawId'
     | '/game/$gameId'
+    | '/games/create'
     | '/schedule/$scheduleId'
     | '/admin/agent/$agentId'
     | '/admin/player/$playerId'
@@ -238,6 +288,9 @@ export interface FileRouteTypes {
     | '/draws'
     | '/games'
     | '/login'
+    | '/players'
+    | '/transactions'
+    | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
     | '/admin/permissions'
@@ -248,8 +301,10 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/users'
     | '/admin/wallet-credits'
+    | '/config/winner-selection'
     | '/draw/$drawId'
     | '/game/$gameId'
+    | '/games/create'
     | '/schedule/$scheduleId'
     | '/admin/agent/$agentId'
     | '/admin/player/$playerId'
@@ -261,6 +316,9 @@ export interface FileRouteTypes {
     | '/draws'
     | '/games'
     | '/login'
+    | '/players'
+    | '/transactions'
+    | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
     | '/admin/permissions'
@@ -271,8 +329,10 @@ export interface FileRouteTypes {
     | '/admin/transactions'
     | '/admin/users'
     | '/admin/wallet-credits'
+    | '/config/winner-selection'
     | '/draw/$drawId'
     | '/game/$gameId'
+    | '/games/create'
     | '/schedule/$scheduleId'
     | '/admin/agent/$agentId'
     | '/admin/player/$playerId'
@@ -283,8 +343,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   DrawsRoute: typeof DrawsRoute
-  GamesRoute: typeof GamesRoute
+  GamesRoute: typeof GamesRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PlayersRoute: typeof PlayersRoute
+  TransactionsRoute: typeof TransactionsRoute
+  WinsRoute: typeof WinsRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminPermissionsRoute: typeof AdminPermissionsRoute
@@ -295,6 +358,7 @@ export interface RootRouteChildren {
   AdminTransactionsRoute: typeof AdminTransactionsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminWalletCreditsRoute: typeof AdminWalletCreditsRoute
+  ConfigWinnerSelectionRoute: typeof ConfigWinnerSelectionRoute
   DrawDrawIdRoute: typeof DrawDrawIdRoute
   GameGameIdRoute: typeof GameGameIdRoute
   ScheduleScheduleIdRoute: typeof ScheduleScheduleIdRoute
@@ -305,6 +369,27 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wins': {
+      id: '/wins'
+      path: '/wins'
+      fullPath: '/wins'
+      preLoaderRoute: typeof WinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transactions': {
+      id: '/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof TransactionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/players': {
+      id: '/players'
+      path: '/players'
+      fullPath: '/players'
+      preLoaderRoute: typeof PlayersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -347,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScheduleScheduleIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/games/create': {
+      id: '/games/create'
+      path: '/create'
+      fullPath: '/games/create'
+      preLoaderRoute: typeof GamesCreateRouteImport
+      parentRoute: typeof GamesRoute
+    }
     '/game/$gameId': {
       id: '/game/$gameId'
       path: '/game/$gameId'
@@ -359,6 +451,13 @@ declare module '@tanstack/react-router' {
       path: '/draw/$drawId'
       fullPath: '/draw/$drawId'
       preLoaderRoute: typeof DrawDrawIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/config/winner-selection': {
+      id: '/config/winner-selection'
+      path: '/config/winner-selection'
+      fullPath: '/config/winner-selection'
+      preLoaderRoute: typeof ConfigWinnerSelectionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/wallet-credits': {
@@ -455,12 +554,25 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface GamesRouteChildren {
+  GamesCreateRoute: typeof GamesCreateRoute
+}
+
+const GamesRouteChildren: GamesRouteChildren = {
+  GamesCreateRoute: GamesCreateRoute,
+}
+
+const GamesRouteWithChildren = GamesRoute._addFileChildren(GamesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   DrawsRoute: DrawsRoute,
-  GamesRoute: GamesRoute,
+  GamesRoute: GamesRouteWithChildren,
   LoginRoute: LoginRoute,
+  PlayersRoute: PlayersRoute,
+  TransactionsRoute: TransactionsRoute,
+  WinsRoute: WinsRoute,
   AdminAgentsRoute: AdminAgentsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminPermissionsRoute: AdminPermissionsRoute,
@@ -471,6 +583,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminTransactionsRoute: AdminTransactionsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminWalletCreditsRoute: AdminWalletCreditsRoute,
+  ConfigWinnerSelectionRoute: ConfigWinnerSelectionRoute,
   DrawDrawIdRoute: DrawDrawIdRoute,
   GameGameIdRoute: GameGameIdRoute,
   ScheduleScheduleIdRoute: ScheduleScheduleIdRoute,

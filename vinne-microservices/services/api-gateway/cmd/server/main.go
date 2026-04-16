@@ -550,6 +550,7 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 
 	// Public draw results - no authentication required
 	r.GET("/api/v1/public/draws/completed", drawHandler.GetPublicCompletedDraws)
+	r.GET("/api/v1/public/winners", drawHandler.GetPublicWinners)
 
 	// Public games list - no authentication required
 	r.GET("/api/v1/public/games", gameHandler.GetActiveGames)

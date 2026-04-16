@@ -58,17 +58,15 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         {/* Logo and Header */}
         <div className="text-center mb-8">
-          <img
-            src="/spiel_logo.png"
-            alt="Spiel"
-            className="mx-auto h-16 w-16 mb-4"
-          />
-          <h1 className="text-2xl font-bold text-gray-900">Spiel Admin</h1>
-          <p className="text-gray-600 mt-2">Sign in to your admin dashboard</p>
+          <div className="mx-auto h-14 w-14 mb-4 rounded-xl bg-primary flex items-center justify-center">
+            <span className="text-xl font-bold text-primary-foreground">WB</span>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">WinBig Africa</h1>
+          <p className="text-muted-foreground mt-2">Sign in to your admin dashboard</p>
         </div>
 
         <Card>
@@ -149,8 +147,8 @@ export default function Login() {
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-xs text-gray-500">
-            © 2025 Spiel. All rights reserved. | Licensed by National Lottery Authority
+          <p className="text-xs text-muted-foreground">
+            © 2025 WinBig Africa. All rights reserved. | Licensed by National Lottery Authority
           </p>
         </div>
       </div>

@@ -56,6 +56,11 @@ type Game struct {
 	MaxDrawsAdvance     *int32     `json:"max_draws_advance,omitempty" db:"max_draws_advance"`
 	WeeklySchedule      *bool      `json:"weekly_schedule,omitempty" db:"weekly_schedule"`
 	Description         *string    `json:"description,omitempty" db:"description"`
+	PrizeDetails        *string    `json:"prize_details,omitempty" db:"prize_details"`
+	Rules               *string    `json:"rules,omitempty" db:"rules"`
+	TotalTickets        int32      `json:"total_tickets" db:"total_tickets"`
+	StartDate           *string    `json:"start_date,omitempty" db:"start_date"` // YYYY-MM-DD
+	EndDate             *string    `json:"end_date,omitempty" db:"end_date"`     // YYYY-MM-DD
 	LogoURL             *string    `json:"logo_url,omitempty" db:"logo_url"`
 	BrandColor          *string    `json:"brand_color,omitempty" db:"brand_color" validate:"omitempty,hexcolor"`
 	Status              string     `json:"status" db:"status"`
@@ -225,8 +230,8 @@ const (
 type Organizer string
 
 const (
-	OrganizerNLA         Organizer = "ORGANIZER_NLA"
-	OrganizerRandLottery Organizer = "ORGANIZER_RAND_LOTTERY"
+	OrganizerNLA       Organizer = "ORGANIZER_NLA"
+	OrganizerWinBig    Organizer = "ORGANIZER_WINBIG_AFRICA"
 )
 
 type GameStatus string
@@ -294,6 +299,12 @@ type CreateGameRequest struct {
 	MaxDrawsAdvance     *int32    `json:"max_draws_advance,omitempty"`
 	WeeklySchedule      *bool     `json:"weekly_schedule,omitempty"`
 	Description         *string   `json:"description,omitempty"`
+	PrizeDetails        *string   `json:"prize_details,omitempty"`
+	Rules               *string   `json:"rules,omitempty"`
+	TotalTickets        int32     `json:"total_tickets,omitempty"`
+	StartDate           *string   `json:"start_date,omitempty"` // YYYY-MM-DD
+	EndDate             *string   `json:"end_date,omitempty"`   // YYYY-MM-DD
+	Status              string    `json:"status,omitempty"`
 }
 
 type UpdateGameRequest struct {
@@ -353,58 +364,35 @@ func (g *Game) ValidateBusinessRules() error {
 	if g.Name == "" {
 		return fmt.Errorf("game name cannot be empty")
 	}
-	if g.Organizer == "" {
-		return fmt.Errorf("game organizer cannot be empty")
+
+	// Validate stake amounts only when set
+	if g.MinStakeAmount > 0 && g.MaxStakeAmount > 0 {
+		if g.MinStakeAmount > g.MaxStakeAmount {
+			return fmt.Errorf("minimum stake amount cannot be greater than maximum stake amount")
+		}
 	}
 
-	// Validate stake amounts
-	if g.MinStakeAmount <= 0 {
-		return fmt.Errorf("minimum stake amount must be positive")
-	}
-	if g.MaxStakeAmount <= 0 {
-		return fmt.Errorf("maximum stake amount must be positive")
-	}
-	if g.MinStakeAmount > g.MaxStakeAmount {
-		return fmt.Errorf("minimum stake amount cannot be greater than maximum stake amount")
-	}
-
-	// Validate number range
-	if g.NumberRangeMin < 1 {
-		return fmt.Errorf("number range minimum must be at least 1")
-	}
-	if g.NumberRangeMax <= g.NumberRangeMin {
-		return fmt.Errorf("number range maximum must be greater than minimum")
+	// Validate number range only when set
+	if g.NumberRangeMin > 0 && g.NumberRangeMax > 0 {
+		if g.NumberRangeMax <= g.NumberRangeMin {
+			return fmt.Errorf("number range maximum must be greater than minimum")
+		}
+		if g.SelectionCount > 0 {
+			totalNumbers := g.NumberRangeMax - g.NumberRangeMin + 1
+			if g.SelectionCount > totalNumbers {
+				return fmt.Errorf("selection count %d cannot exceed total available numbers %d", g.SelectionCount, totalNumbers)
+			}
+		}
 	}
 
-	// Validate selection count
-	totalNumbers := g.NumberRangeMax - g.NumberRangeMin + 1
-	if g.SelectionCount < 1 {
-		return fmt.Errorf("selection count must be at least 1")
-	}
-	if g.SelectionCount > totalNumbers {
-		return fmt.Errorf("selection count %d cannot exceed total available numbers %d", g.SelectionCount, totalNumbers)
-	}
-
-	// Validate tickets per player
-	if g.MaxTicketsPerPlayer < 1 {
-		return fmt.Errorf("maximum tickets per player must be at least 1")
+	// Validate tickets per player only when set
+	if g.MaxTicketsPerPlayer > 0 && g.MaxTicketsPerPlayer > 1000 {
+		return fmt.Errorf("maximum tickets per player must be at most 1000")
 	}
 
 	// Validate sales cutoff
 	if g.SalesCutoffMinutes < 0 {
 		return fmt.Errorf("sales cutoff minutes cannot be negative")
-	}
-
-	// Validate draw configuration
-	if g.DrawFrequency == "" {
-		return fmt.Errorf("draw frequency is required")
-	}
-
-	// Validate weekly/bi-weekly specific requirements
-	if g.DrawFrequency == string(DrawFrequencyWeekly) || g.DrawFrequency == string(DrawFrequencyBiWeekly) {
-		if len(g.DrawDays) == 0 {
-			return fmt.Errorf("draw days must be specified for %s frequency", g.DrawFrequency)
-		}
 	}
 
 	// Validate multi-draw configuration
@@ -442,36 +430,88 @@ func (req *CreateGameRequest) ConvertToGame() (*Game, error) {
 		}
 	}
 
+	// Apply defaults for lottery-specific fields not used by WinBig competitions
+	organizer := req.Organizer
+	if organizer == "" {
+		organizer = "ORGANIZER_WINBIG_AFRICA"
+	}
+	gameFormat := req.GameFormat
+	if gameFormat == "" {
+		gameFormat = "competition"
+	}
+	gameCategory := req.GameCategory
+	if gameCategory == "" {
+		gameCategory = "private"
+	}
+	drawFrequency := req.DrawFrequency
+	if drawFrequency == "" {
+		drawFrequency = "special"
+	}
+	numberRangeMin := req.NumberRangeMin
+	if numberRangeMin == 0 {
+		numberRangeMin = 1
+	}
+	numberRangeMax := req.NumberRangeMax
+	if numberRangeMax == 0 {
+		numberRangeMax = 90
+	}
+	selectionCount := req.SelectionCount
+	if selectionCount == 0 {
+		selectionCount = 5
+	}
+	minStake := req.MinStake
+	if minStake == 0 {
+		minStake = req.BasePrice
+	}
+	maxStake := req.MaxStake
+	if maxStake == 0 {
+		maxStake = req.BasePrice
+	}
+	maxTickets := req.MaxTicketsPerPlayer
+	if maxTickets == 0 {
+		maxTickets = 1000
+	}
+
+	status := req.Status
+	if status == "" {
+		status = "DRAFT"
+	}
+
 	return &Game{
 		Code:                req.Code,
 		Name:                req.Name,
-		GameFormat:          req.GameFormat,
-		GameCategory:        req.GameCategory,
-		Organizer:           req.Organizer,
+		GameFormat:          gameFormat,
+		GameCategory:        gameCategory,
+		Organizer:           organizer,
 		GameType:            req.GameType,
-		NumberRangeMin:      req.NumberRangeMin,
-		NumberRangeMax:      req.NumberRangeMax,
-		SelectionCount:      req.SelectionCount,
-		MinStakeAmount:      req.MinStake,
-		MaxStakeAmount:      req.MaxStake,
+		NumberRangeMin:      numberRangeMin,
+		NumberRangeMax:      numberRangeMax,
+		SelectionCount:      selectionCount,
+		MinStakeAmount:      minStake,
+		MaxStakeAmount:      maxStake,
 		BasePrice:           req.BasePrice,
-		MaxTicketsPerPlayer: req.MaxTicketsPerPlayer,
+		MaxTicketsPerPlayer: maxTickets,
+		TotalTickets:        req.TotalTickets,
 		MultiDrawEnabled:    req.MultiDrawEnabled,
 		MaxDrawsAdvance:     req.MaxDrawsAdvance,
-		DrawFrequency:       req.DrawFrequency,
+		DrawFrequency:       drawFrequency,
 		DrawDays:            req.DrawDays,
 		DrawTime:            drawTime,
 		SalesCutoffMinutes:  req.SalesCutoffMinutes,
 		WeeklySchedule:      req.WeeklySchedule,
-		Status:              "DRAFT",
+		Status:              status,
 		Description:         req.Description,
+		PrizeDetails:        req.PrizeDetails,
+		Rules:               req.Rules,
+		StartDate:           req.StartDate,
+		EndDate:             req.EndDate,
 		StartTime:           req.StartTime,
 		StartTimeStr:        req.StartTime,
 		EndTime:             req.EndTime,
 		EndTimeStr:          req.EndTime,
 		DrawTimeStr:         req.DrawTime,
 		Version:             "1.0.0",
-		Type:                "standard", // Default type for backward compatibility
+		Type:                "standard",
 	}, nil
 }
 
@@ -496,51 +536,26 @@ func (req *CreateGameRequest) Validate() error {
 	if req.Name == "" {
 		return fmt.Errorf("game name is required")
 	}
-	if req.Organizer == "" {
-		return fmt.Errorf("organizer is required")
-	}
-	if req.GameCategory == "" {
-		return fmt.Errorf("game category is required")
-	}
-	if req.GameFormat == "" {
-		return fmt.Errorf("game format is required")
-	}
-	if len(req.BetTypes) == 0 {
-		return fmt.Errorf("at least one bet type is required")
+
+	// Validate stake amounts only when explicitly provided
+	if req.MinStake > 0 && req.MaxStake > 0 {
+		if req.MinStake > req.MaxStake {
+			return fmt.Errorf("minimum stake cannot be greater than maximum stake")
+		}
 	}
 
-	// Validate stake amounts
-	if req.MinStake < 0.5 || req.MinStake > 200000 {
-		return fmt.Errorf("minimum stake must be between 0.5 and 200000 GHS")
-	}
-	if req.MaxStake < 0.5 || req.MaxStake > 200000 {
-		return fmt.Errorf("maximum stake must be between 0.5 and 200000 GHS")
-	}
-	if req.MinStake > req.MaxStake {
-		return fmt.Errorf("minimum stake cannot be greater than maximum stake")
-	}
-
-	// Validate number range
-	if req.NumberRangeMin < 1 {
-		return fmt.Errorf("number range minimum must be at least 1")
-	}
-	if req.NumberRangeMax <= req.NumberRangeMin {
-		return fmt.Errorf("number range maximum must be greater than minimum")
-	}
-	if req.SelectionCount < 1 {
-		return fmt.Errorf("selection count must be at least 1")
-	}
-	if req.SelectionCount > (req.NumberRangeMax - req.NumberRangeMin + 1) {
-		return fmt.Errorf("selection count cannot be greater than available numbers")
+	// Validate number range only when explicitly provided
+	if req.NumberRangeMin > 0 && req.NumberRangeMax > 0 {
+		if req.NumberRangeMax <= req.NumberRangeMin {
+			return fmt.Errorf("number range maximum must be greater than minimum")
+		}
+		if req.SelectionCount > 0 && req.SelectionCount > (req.NumberRangeMax-req.NumberRangeMin+1) {
+			return fmt.Errorf("selection count cannot be greater than available numbers")
+		}
 	}
 
-	// Validate draw frequency
-	if req.DrawFrequency == "" {
-		return fmt.Errorf("draw frequency is required")
-	}
-
-	// Validate tickets per player
-	if req.MaxTicketsPerPlayer < 1 || req.MaxTicketsPerPlayer > 1000 {
+	// Validate tickets per player only when explicitly provided
+	if req.MaxTicketsPerPlayer > 0 && req.MaxTicketsPerPlayer > 1000 {
 		return fmt.Errorf("maximum tickets per player must be between 1 and 1000")
 	}
 
@@ -550,28 +565,15 @@ func (req *CreateGameRequest) Validate() error {
 			return fmt.Errorf("invalid draw time format, use HH:MM")
 		}
 	}
-
 	if req.StartTime != nil && *req.StartTime != "" {
 		if _, err := time.Parse("15:04", *req.StartTime); err != nil {
 			return fmt.Errorf("invalid start time format, use HH:MM")
 		}
 	}
-
 	if req.EndTime != nil && *req.EndTime != "" {
 		if _, err := time.Parse("15:04", *req.EndTime); err != nil {
 			return fmt.Errorf("invalid end time format, use HH:MM")
 		}
-	}
-
-	// Validate start and end time relationship
-	if req.StartTime != nil && req.EndTime != nil && *req.StartTime != "" && *req.EndTime != "" {
-		_, err1 := time.Parse("15:04", *req.StartTime)
-		_, err2 := time.Parse("15:04", *req.EndTime)
-		if err1 != nil || err2 != nil {
-			return fmt.Errorf("invalid time format for start or end time")
-		}
-		// Note: End time can be before start time (crosses midnight)
-		// This is valid for games that run overnight
 	}
 
 	// Validate multi-draw configuration

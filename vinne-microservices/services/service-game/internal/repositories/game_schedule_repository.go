@@ -24,6 +24,7 @@ type GameScheduleRepository interface {
 	GetActiveSchedules(ctx context.Context) ([]*models.GameSchedule, error)
 	GetUpcomingSchedules(ctx context.Context, limit int) ([]*models.GameSchedule, error)
 	GetSchedulesInTimeRange(ctx context.Context, start, end time.Time) ([]*models.GameSchedule, error)
+	HasScheduleForGameInRange(ctx context.Context, gameID uuid.UUID, start, end time.Time) (bool, error)
 	DeleteSchedulesInTimeRange(ctx context.Context, start, end time.Time) error
 	DeleteUnplayedSchedulesInTimeRange(ctx context.Context, start, end time.Time) error
 	GetSchedulesDueForProcessing(ctx context.Context, eventType string, windowMinutes int) ([]*models.GameSchedule, error)
@@ -338,6 +339,21 @@ func (r *gameScheduleRepository) GetUpcomingSchedules(ctx context.Context, limit
 		}()),
 	)
 	return schedules, nil
+}
+
+// HasScheduleForGameInRange returns true if a non-cancelled schedule already exists for the game in the range
+func (r *gameScheduleRepository) HasScheduleForGameInRange(ctx context.Context, gameID uuid.UUID, start, end time.Time) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM game_schedules
+		 WHERE game_id = $1 AND scheduled_draw >= $2 AND scheduled_draw <= $3
+		   AND status NOT IN ('CANCELLED', 'cancelled')`,
+		gameID, start, end,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("HasScheduleForGameInRange: %w", err)
+	}
+	return count > 0, nil
 }
 
 // GetSchedulesInTimeRange retrieves schedules within a time range

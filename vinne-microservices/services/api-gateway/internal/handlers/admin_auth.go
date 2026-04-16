@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	adminmgmtpb "github.com/randco/randco-microservices/proto/admin/management/v1"
@@ -524,6 +525,17 @@ func (h *adminAuthHandlerImpl) handleGRPCError(w http.ResponseWriter, err error,
 	case codes.Unavailable:
 		return response.ServiceUnavailableError(w, "Admin management")
 	default:
+		// Handle services that return Unknown code with UNAUTHORIZED/NOT_FOUND messages
+		msg := st.Message()
+		if strings.HasPrefix(msg, "UNAUTHORIZED") {
+			return response.UnauthorizedError(w, "Invalid credentials")
+		}
+		if strings.HasPrefix(msg, "NOT_FOUND") {
+			return response.NotFoundError(w, "User")
+		}
+		if strings.HasPrefix(msg, "ALREADY_EXISTS") {
+			return response.ConflictError(w, msg)
+		}
 		h.log.Error(defaultMsg, "error", err, "code", st.Code())
 		return response.InternalError(w, defaultMsg)
 	}

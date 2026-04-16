@@ -21,6 +21,7 @@ const (
 	BetTypePerm5     = "PERM-5"
 	BetTypeBankerAll = "BANKER-ALL"
 	BetTypeBankerAG  = "BANKER-AG"
+	BetTypeRaffle    = "RAFFLE"
 )
 
 // Multipliers for each bet type
@@ -56,6 +57,9 @@ type BetLine struct {
 
 	// Common fields
 	TotalAmount int64 // Total bet amount in pesewas
+
+	// For RAFFLE bets — the ticket's 6-digit verification code
+	RaffleVerificationCode int32
 }
 
 // WinningResult represents the result of checking a bet line against winning numbers
@@ -88,7 +92,9 @@ func NormalizeBetType(betType string) string {
 
 // CalculateWinnings checks all bet lines against winning numbers and calculates total winnings
 func (e *BetRulesEngine) CalculateWinnings(betLines []*BetLine, winningNumbers []int32) (int64, []*WinningResult, error) {
-	if len(winningNumbers) != 5 {
+	// For raffle draws a single winning number (ticket index) is valid
+	isRaffle := len(betLines) > 0 && NormalizeBetType(betLines[0].BetType) == BetTypeRaffle
+	if !isRaffle && len(winningNumbers) != 5 {
 		return 0, nil, errors.New("winning numbers must contain exactly 5 numbers")
 	}
 
@@ -121,6 +127,8 @@ func (e *BetRulesEngine) CheckBetLine(betLine *BetLine, winningNumbers []int32) 
 		return e.checkBankerAll(betLine, winningNumbers)
 	case BetTypeBankerAG:
 		return e.checkBankerAG(betLine, winningNumbers)
+	case BetTypeRaffle:
+		return e.checkRaffleBet(betLine, winningNumbers)
 	default:
 		return nil, errors.New("unsupported bet type: " + betLine.BetType)
 	}
@@ -438,6 +446,35 @@ func (e *BetRulesEngine) checkBankerAG(betLine *BetLine, winningNumbers []int32)
 		e.logger.Printf("DEBUG checkBankerAG: NOT A WINNER - no pairs with both numbers in winning draw")
 	}
 
+	return result, nil
+}
+
+// checkRaffleBet handles RAFFLE bet type.
+// winning_numbers contains the verification codes of the selected winning tickets.
+// A raffle ticket wins if its verification code appears in winning_numbers.
+func (e *BetRulesEngine) checkRaffleBet(betLine *BetLine, winningNumbers []int32) (*WinningResult, error) {
+	result := &WinningResult{
+		BetLine:       betLine,
+		IsWinner:      false,
+		MatchedCount:  0,
+		WinningAmount: 0,
+	}
+
+	// winningNumbers[0] is the verification code of the winning ticket
+	// betLine.TotalAmount is the stake — the prize is the full prize pool (set externally)
+	// For now: winning ticket gets its stake back as winnings (prize pool handled at payout)
+	// We mark it as a winner with WinningAmount = TotalAmount as a placeholder
+	for _, wn := range winningNumbers {
+		if wn == betLine.RaffleVerificationCode {
+			result.IsWinner = true
+			result.MatchedCount = 1
+			result.WinningAmount = betLine.TotalAmount // placeholder; real prize set at payout
+			e.logger.Printf("checkRaffleBet: WINNER! VerificationCode=%d", wn)
+			return result, nil
+		}
+	}
+
+	e.logger.Printf("checkRaffleBet: NOT A WINNER")
 	return result, nil
 }
 

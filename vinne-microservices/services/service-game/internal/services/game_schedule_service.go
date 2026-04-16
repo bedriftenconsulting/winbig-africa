@@ -530,6 +530,8 @@ func (s *gameScheduleService) generateGameSchedulesForWeek(ctx context.Context, 
 		schedules = s.generateWeeklySchedules(game, weekStart)
 	case models.DrawFrequencyBiWeekly:
 		schedules = s.generateBiWeeklySchedules(game, weekStart)
+	case models.DrawFrequencyMonthly, models.DrawFrequencySpecial:
+		schedules = s.generateMonthlyOrSpecialSchedule(ctx, game, weekStart)
 	default:
 		return nil, fmt.Errorf("unsupported frequency: %s", game.DrawFrequency)
 	}
@@ -658,6 +660,76 @@ func (s *gameScheduleService) generateBiWeeklySchedules(game *models.Game, weekS
 	// For simplicity, treat bi-weekly as once per week for now
 	// In a real implementation, you'd need to track which week of the bi-weekly cycle this is
 	return s.generateWeeklySchedules(game, weekStart)
+}
+
+// generateMonthlyOrSpecialSchedule creates a single draw for a monthly or special game.
+// For special/monthly, only ONE schedule is created per calendar month — if one already exists, skip.
+func (s *gameScheduleService) generateMonthlyOrSpecialSchedule(ctx context.Context, game *models.Game, weekStart time.Time) []*models.GameSchedule {
+	fmt.Printf("[GameScheduleService] generateMonthlyOrSpecialSchedule: game=%s, frequency=%s\n", game.Code, game.DrawFrequency)
+
+	// Check if a schedule already exists anywhere in this calendar month
+	monthStart := time.Date(weekStart.Year(), weekStart.Month(), 1, 0, 0, 0, 0, weekStart.Location())
+	monthEnd := monthStart.AddDate(0, 1, 0).Add(-time.Second)
+
+	exists, err := s.scheduleRepo.HasScheduleForGameInRange(ctx, game.ID, monthStart, monthEnd)
+	if err != nil {
+		fmt.Printf("[GameScheduleService] WARNING: could not check existing schedules for game %s: %v\n", game.Code, err)
+	}
+	if exists {
+		fmt.Printf("[GameScheduleService] Skipping game %s — already has a schedule in %s\n", game.Code, monthStart.Format("January 2006"))
+		return nil
+	}
+
+	// Determine draw day: use first configured draw day if available, else last Saturday of month
+	var drawDay time.Time
+	if len(game.DrawDays) > 0 {
+		weekday := parseWeekday(game.DrawDays[0])
+		if weekday != -1 {
+			daysFromSunday := int(weekday)
+			drawDay = weekStart.AddDate(0, 0, daysFromSunday)
+		}
+	}
+	if drawDay.IsZero() {
+		// Use last Saturday of the month
+		drawDay = monthEnd
+		for drawDay.Weekday() != time.Saturday {
+			drawDay = drawDay.AddDate(0, 0, -1)
+		}
+	}
+
+	var drawTime time.Time
+	if game.DrawTime != nil {
+		drawTime = time.Date(drawDay.Year(), drawDay.Month(), drawDay.Day(),
+			game.DrawTime.Hour(), game.DrawTime.Minute(), game.DrawTime.Second(), 0, drawDay.Location())
+	} else {
+		drawTime = time.Date(drawDay.Year(), drawDay.Month(), drawDay.Day(), 20, 0, 0, 0, drawDay.Location())
+	}
+
+	salesStart := monthStart
+	salesEnd := drawTime.Add(-time.Duration(game.SalesCutoffMinutes) * time.Minute)
+
+	freq := models.DrawFrequencyMonthly
+	if game.DrawFrequency == "SPECIAL" || game.DrawFrequency == "special" {
+		freq = models.DrawFrequencySpecial
+	}
+
+	note := fmt.Sprintf("%s draw for %s", string(freq), game.Name)
+	schedule := &models.GameSchedule{
+		GameID:         game.ID,
+		GameName:       &game.Name,
+		ScheduledStart: salesStart,
+		ScheduledEnd:   salesEnd,
+		ScheduledDraw:  drawTime,
+		Frequency:      freq,
+		IsActive:       true,
+		Status:         models.ScheduleStatusScheduled,
+		Notes:          &note,
+		LogoURL:        game.LogoURL,
+		BrandColor:     game.BrandColor,
+	}
+
+	fmt.Printf("[GameScheduleService] Monthly/Special schedule: game=%s, draw_time=%s\n", game.Code, drawTime.Format("2006-01-02 15:04"))
+	return []*models.GameSchedule{schedule}
 }
 
 // GetWeeklySchedule retrieves all schedules for a specific week

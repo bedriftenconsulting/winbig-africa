@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -6,10 +6,10 @@ import * as z from 'zod'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,702 +38,412 @@ import {
   Check,
   Loader2,
   Info,
-  DollarSign,
+  Trophy,
   Calendar,
-  Settings,
+  FileText,
+  Image,
 } from 'lucide-react'
 import { gameService, type CreateGameRequest } from '@/services/games'
 
-const betTypeSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  enabled: z.boolean(),
-  multiplier: z.number().min(1).max(10000),
-})
+// ─── Schema ──────────────────────────────────────────────────────────────────
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 const gameSchema = z.object({
-  // Step 1: Basic Information
-  code: z.string().min(2, 'Game code must be at least 2 characters').max(10),
+  // Step 1 – Basic Info
   name: z.string().min(3, 'Game name must be at least 3 characters'),
-  game_category: z.enum(['national', 'private']),
+  code: z.string().min(2, 'Game code must be at least 2 characters').max(10),
   description: z.string().optional(),
+  status: z.string().default('Draft'),
 
-  // Step 2: Game Format & Bet Types
-  format: z.enum(['5_by_90', '5_by_30', '6_by_90', '6_by_49', '4_by_90', '3_by_90']),
-  number_range_min: z.number().min(1),
-  number_range_max: z.number().min(1),
-  selection_count: z.number().min(1).max(10),
-  bet_types: z.array(betTypeSchema).min(1, 'At least one bet type must be enabled'),
-
-  // Step 3: Pricing & Limits
-  base_price: z.number().min(0.5, 'Minimum ticket price is ₵0.50').max(200),
-  max_tickets_per_player: z.number().min(1),
-  max_tickets_per_transaction: z.number().min(1),
-  multi_draw_enabled: z.boolean(),
-  max_draws_advance: z.number().optional(),
-  bonus_number_enabled: z.boolean().optional(),
-
-  // Step 4: Schedule
+  // Step 2 – Schedule
   draw_frequency: z.enum(['daily', 'weekly', 'bi_weekly', 'monthly', 'special']),
+  draw_time: z.string().min(1, 'Draw time is required'),
   draw_days: z.array(z.string()).optional(),
-  draw_time: z
-    .string()
-    .min(1, 'Draw time is required')
-    .regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Draw time must be in HH:MM format (e.g., 14:30)'),
-  sales_cutoff_minutes: z.number().min(5).max(1440),
-  start_time: z
-    .string()
-    .optional()
-    .refine(
-      val => !val || /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(val),
-      'Start time must be in HH:MM format (e.g., 08:00)'
-    ),
-  end_time: z
-    .string()
-    .optional()
-    .refine(
-      val => !val || /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(val),
-      'End time must be in HH:MM format (e.g., 20:00)'
-    ),
-  status: z.enum(['Draft', 'PendingApproval', 'Active', 'Suspended', 'Archived']).optional(),
+  sales_cutoff_minutes: z.number().min(1, 'Cutoff must be at least 1 minute'),
 
-  // Legacy fields for backward compatibility
-  organizer: z.enum(['nla', 'rand_lottery']).optional(),
-  game_format: z.string().optional(),
-  game_type: z.string().optional(),
-  min_stake: z.number().optional(),
-  max_stake: z.number().optional(),
-  weekly_schedule: z.boolean().optional(),
+  // Step 3 – Dates & Tickets
+  start_date: z.string().optional(),
+  end_date: z.string().optional(),
+  base_price: z.number({ invalid_type_error: 'Enter a valid price' }).min(0.5, 'Minimum ticket price is ₵0.50'),
+  total_tickets: z.number({ invalid_type_error: 'Enter a valid number' }).int().min(1, 'Total tickets must be at least 1'),
+  max_tickets_per_player: z.number({ invalid_type_error: 'Enter a valid number' }).int().min(1, 'At least 1 ticket per player'),
+
+  // Step 4 – Prize & Rules
+  prize_details: z.string().min(10, 'Please describe the prize in detail'),
+  rules: z.string().min(10, 'Please provide the game rules'),
+
+  // Step 5 – Logo
+  logo_url: z.string().optional(),
 })
 
 type GameFormData = z.infer<typeof gameSchema>
-type BetType = z.infer<typeof betTypeSchema>
+
+// ─── Steps ───────────────────────────────────────────────────────────────────
+
+const steps = [
+  { id: 1, title: 'Basic Info',    icon: Info },
+  { id: 2, title: 'Schedule',      icon: Calendar },
+  { id: 3, title: 'Tickets',       icon: Trophy },
+  { id: 4, title: 'Prize & Rules', icon: FileText },
+  { id: 5, title: 'Logo & Review', icon: Image },
+]
+
+const fieldsPerStep: Record<number, (keyof GameFormData)[]> = {
+  1: ['name', 'code', 'description'],
+  2: ['draw_frequency', 'draw_time', 'sales_cutoff_minutes'],
+  3: ['base_price', 'total_tickets', 'max_tickets_per_player'],
+  4: ['prize_details', 'rules'],
+  5: [],
+}
+
+// ─── Props ───────────────────────────────────────────────────────────────────
 
 interface CreateGameWizardProps {
   isOpen: boolean
   onClose: () => void
 }
 
-const steps = [
-  { id: 1, title: 'Basic Information', icon: Info },
-  { id: 2, title: 'Format & Bet Types', icon: Settings },
-  { id: 3, title: 'Pricing & Limits', icon: DollarSign },
-  { id: 4, title: 'Schedule', icon: Calendar },
-  { id: 5, title: 'Review & Submit', icon: Check },
-]
-
-const weekDays = [
-  { value: 'monday', label: 'Monday' },
-  { value: 'tuesday', label: 'Tuesday' },
-  { value: 'wednesday', label: 'Wednesday' },
-  { value: 'thursday', label: 'Thursday' },
-  { value: 'friday', label: 'Friday' },
-  { value: 'saturday', label: 'Saturday' },
-  { value: 'sunday', label: 'Sunday' },
-]
-
-const availableBetTypes: BetType[] = [
-  { id: 'direct_1', name: '1 Direct', enabled: true, multiplier: 40 },
-  { id: 'direct_2', name: '2 Direct', enabled: true, multiplier: 240 },
-  { id: 'direct_3', name: '3 Direct', enabled: true, multiplier: 1920 },
-  { id: 'direct_4', name: '4 Direct', enabled: false, multiplier: 19200 },
-  { id: 'direct_5', name: '5 Direct', enabled: false, multiplier: 230400 },
-  { id: 'direct_6', name: '6 Direct', enabled: false, multiplier: 25000000 },
-  { id: 'perm_2', name: 'Perm 2', enabled: true, multiplier: 240 },
-  { id: 'perm_3', name: 'Perm 3', enabled: true, multiplier: 1920 },
-  { id: 'perm_4', name: 'Perm 4', enabled: false, multiplier: 19200 },
-  { id: 'perm_5', name: 'Perm 5', enabled: false, multiplier: 230400 },
-  { id: 'perm_6', name: 'Perm 6', enabled: false, multiplier: 25000000 },
-  { id: 'banker', name: 'Banker All', enabled: true, multiplier: 240 },
-  { id: 'banker_against', name: 'Banker AG', enabled: true, multiplier: 240 },
-]
-
-const gameFormatOptions = [
-  { value: '5_by_90', label: '5/90 - Pick 5 numbers from 1-90', min: 1, max: 90, selection: 5 },
-  { value: '5_by_30', label: '5/30 - Pick 5 numbers from 1-30', min: 1, max: 30, selection: 5 },
-  { value: '6_by_90', label: '6/90 - Pick 6 numbers from 1-90', min: 1, max: 90, selection: 6 },
-  { value: '6_by_49', label: '6/49 - Pick 6 numbers from 1-49', min: 1, max: 49, selection: 6 },
-  { value: '4_by_90', label: '4/90 - Pick 4 numbers from 1-90', min: 1, max: 90, selection: 4 },
-  { value: '3_by_90', label: '3/90 - Pick 3 numbers from 1-90', min: 1, max: 90, selection: 3 },
-]
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const form = useForm<GameFormData>({
     resolver: zodResolver(gameSchema),
     defaultValues: {
-      code: '',
       name: '',
-      game_category: 'national',
-      format: '5_by_90',
-      number_range_min: 1,
-      number_range_max: 90,
-      selection_count: 5,
-      bet_types: availableBetTypes.filter(bt => bt.enabled), // Enable preselected bet types
-      draw_frequency: 'daily',
-      draw_time: '', // Initialize as empty string (required field, user must fill)
+      code: '',
+      description: '',
+      status: 'Draft',
+      draw_frequency: 'weekly',
+      draw_time: '20:00',
+      draw_days: ['Friday'],
       sales_cutoff_minutes: 30,
+      start_date: '',
+      end_date: '',
       base_price: 1,
+      total_tickets: 1000,
       max_tickets_per_player: 10,
-      max_tickets_per_transaction: 10,
-      multi_draw_enabled: false,
-      bonus_number_enabled: false,
-      draw_days: [],
-      start_time: '', // Optional but initialize as empty
-      end_time: '', // Optional but initialize as empty
-      organizer: 'rand_lottery',
-      game_format: '5_by_90',
-      min_stake: 1,
-      max_stake: 1000,
-      weekly_schedule: false,
+      prize_details: '',
+      rules: '',
+      logo_url: '',
     },
   })
+
+  const frequency = form.watch('draw_frequency')
+  const drawDays = form.watch('draw_days') || []
+
+  const toggleDrawDay = (day: string) => {
+    const current = form.getValues('draw_days') || []
+    if (current.includes(day)) {
+      form.setValue('draw_days', current.filter(d => d !== day))
+    } else {
+      form.setValue('draw_days', [...current, day])
+    }
+  }
 
   const createGameMutation = useMutation({
     mutationFn: (data: CreateGameRequest) => gameService.createGame(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
-      toast({
-        title: 'Success',
-        description: 'Game created successfully and sent for approval',
-      })
-      onClose()
-      form.reset()
-      setCurrentStep(1)
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
+      toast({ title: 'Game created', description: 'The game has been saved.' })
+      handleClose()
     },
     onError: (error: unknown) => {
-      const errorMessage =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        (error as Error)?.message ||
-        'Failed to create game'
       toast({
         title: 'Error',
-        description: errorMessage,
+        description:
+          (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+          (error as Error)?.message ||
+          'Failed to create game',
         variant: 'destructive',
       })
     },
   })
 
+  const handleClose = () => {
+    form.reset()
+    setCurrentStep(1)
+    setLogoPreview(null)
+    onClose()
+  }
+
   const handleNext = async () => {
-    const fieldsToValidate = getFieldsForStep(currentStep)
-    const isValid = await form.trigger(fieldsToValidate as (keyof GameFormData)[])
-
-    if (isValid) {
-      if (currentStep === 5) {
-        handleSubmit()
-      } else {
-        setCurrentStep(currentStep + 1)
-      }
+    const valid = await form.trigger(fieldsPerStep[currentStep] as (keyof GameFormData)[])
+    if (!valid) return
+    if (currentStep === steps.length) {
+      handleSubmit()
+    } else {
+      setCurrentStep(s => s + 1)
     }
   }
 
-  const handleBack = () => {
-    setCurrentStep(currentStep - 1)
-  }
+  const handleBack = () => setCurrentStep(s => s - 1)
 
-  // Helper function to convert time string to GMT
-  // Note: Ghana is in GMT (UTC+0), so no actual conversion needed
-  // This function validates and normalizes the time format
-  const convertTimeToGMT = (timeString?: string): string | undefined => {
-    // Return undefined for truly empty/missing values
-    if (!timeString || timeString.trim() === '') return undefined
-
-    // Validate format HH:MM
-    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-    if (!timeRegex.test(timeString)) {
-      console.error(`Invalid time format: ${timeString}`)
-      return undefined
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const url = ev.target?.result as string
+      setLogoPreview(url)
+      form.setValue('logo_url', url)
     }
-
-    // Ghana is in GMT (UTC+0), so we just normalize the format to HH:MM
-    const [hours, minutes] = timeString.split(':')
-    const normalizedHours = hours.padStart(2, '0')
-    const normalizedMinutes = minutes.padStart(2, '0')
-
-    return `${normalizedHours}:${normalizedMinutes}`
+    reader.readAsDataURL(file)
   }
 
   const handleSubmit = () => {
-    const formData = form.getValues()
-
-    // Filter and format bet types for the backend
-    const enabledBetTypes = formData.bet_types
-      .filter(bt => bt.enabled)
-      .map(bt => ({
-        id: bt.id,
-        name: bt.name,
-        enabled: true,
-        multiplier: bt.multiplier,
-      }))
-
+    const d = form.getValues()
     const payload: CreateGameRequest = {
-      code: formData.code,
-      name: formData.name,
-      description: formData.description,
-      game_category: formData.game_category,
-      format: formData.format,
-      bet_types: enabledBetTypes,
-      number_range_min: formData.number_range_min,
-      number_range_max: formData.number_range_max,
-      selection_count: formData.selection_count,
-      draw_frequency: formData.draw_frequency,
-      draw_days:
-        formData.draw_frequency === 'weekly' || formData.draw_frequency === 'bi_weekly'
-          ? formData.draw_days
-          : undefined,
-      draw_time: convertTimeToGMT(formData.draw_time),
-      sales_cutoff_minutes: formData.sales_cutoff_minutes,
-      base_price: formData.base_price,
-      max_tickets_per_player: formData.max_tickets_per_player,
-      max_tickets_per_transaction: formData.max_tickets_per_transaction,
-      multi_draw_enabled: formData.multi_draw_enabled,
-      max_draws_advance: formData.multi_draw_enabled ? formData.max_draws_advance : undefined,
-      bonus_number_enabled: formData.bonus_number_enabled,
-      start_time: convertTimeToGMT(formData.start_time),
-      end_time: convertTimeToGMT(formData.end_time),
-      status: formData.status || 'Draft',
-      // Legacy fields for backward compatibility
-      organizer: formData.organizer,
-      game_format: formData.game_format,
-      game_type: formData.game_type,
-      min_stake: formData.min_stake,
-      max_stake: formData.max_stake,
-      weekly_schedule: formData.weekly_schedule,
+      code: d.code,
+      name: d.name,
+      description: d.description,
+      draw_frequency: d.draw_frequency,
+      draw_time: d.draw_time,
+      draw_days: (d.draw_frequency === 'weekly' || d.draw_frequency === 'bi_weekly') ? (d.draw_days || []) : undefined,
+      sales_cutoff_minutes: d.sales_cutoff_minutes,
+      base_price: d.base_price,
+      total_tickets: d.total_tickets,
+      max_tickets_per_player: d.max_tickets_per_player,
+      multi_draw_enabled: false,
+      status: d.status as 'Draft' | 'Active',
+      start_date: d.start_date || undefined,
+      end_date: d.end_date || undefined,
+      prize_details: d.prize_details,
+      rules: d.rules,
+      // Always competition — never lottery
+      game_category: 'private',
+      format: 'competition',
+      organizer: 'winbig_africa',
+      bet_types: [],
+      number_range_min: 1,
+      number_range_max: 100,
+      selection_count: 1,
     }
-
-    console.log('Payload being sent to backend:', JSON.stringify(payload, null, 2))
-    console.log('Bet types in payload:', payload.bet_types)
-
     createGameMutation.mutate(payload)
   }
 
-  const handleFormatChange = (newFormat: string) => {
-    const selectedFormat = gameFormatOptions.find(f => f.value === newFormat)
-    if (selectedFormat) {
-      form.setValue(
-        'format',
-        newFormat as '5_by_90' | '5_by_30' | '6_by_90' | '6_by_49' | '4_by_90' | '3_by_90'
-      )
-      form.setValue('game_format', newFormat)
-      form.setValue('number_range_min', selectedFormat.min)
-      form.setValue('number_range_max', selectedFormat.max)
-      form.setValue('selection_count', selectedFormat.selection)
-    }
+  const progress = (currentStep / steps.length) * 100
+
+  const freqLabel: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    bi_weekly: 'Bi-Weekly',
+    monthly: 'Monthly (once per month)',
+    special: 'Special (one-time draw)',
   }
-
-  const handleBetTypeToggle = (betTypeId: string) => {
-    const currentBetTypes = form.getValues('bet_types')
-    const updatedBetTypes = currentBetTypes.map(bt =>
-      bt.id === betTypeId ? { ...bt, enabled: !bt.enabled } : bt
-    )
-
-    // If no bet types exist for this id, add it
-    if (!currentBetTypes.find(bt => bt.id === betTypeId)) {
-      const newBetType = availableBetTypes.find(bt => bt.id === betTypeId)
-      if (newBetType) {
-        updatedBetTypes.push({ ...newBetType, enabled: true })
-      }
-    }
-
-    form.setValue('bet_types', updatedBetTypes)
-  }
-
-  const handleMultiplierChange = (betTypeId: string, multiplier: number) => {
-    const currentBetTypes = form.getValues('bet_types')
-    const updatedBetTypes = currentBetTypes.map(bt =>
-      bt.id === betTypeId ? { ...bt, multiplier } : bt
-    )
-    form.setValue('bet_types', updatedBetTypes)
-  }
-
-  const getFieldsForStep = (step: number): (keyof GameFormData)[] => {
-    switch (step) {
-      case 1:
-        return ['code', 'name', 'game_category', 'description']
-      case 2:
-        return ['format', 'number_range_min', 'number_range_max', 'selection_count', 'bet_types']
-      case 3:
-        return [
-          'base_price',
-          'max_tickets_per_player',
-          'max_tickets_per_transaction',
-          'multi_draw_enabled',
-        ]
-      case 4:
-        return ['draw_frequency', 'draw_time', 'sales_cutoff_minutes']
-      default:
-        return []
-    }
-  }
-
-  const progressPercentage = (currentStep / steps.length) * 100
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Game</DialogTitle>
-          <DialogDescription>Complete all steps to create a new lottery game</DialogDescription>
+          <DialogDescription>Fill in the details to set up a new competition</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Progress Bar */}
-          <div className="space-y-2">
-            <Progress value={progressPercentage} className="h-2" />
-            <div className="flex justify-between">
-              {steps.map(step => {
-                const Icon = step.icon
-                return (
-                  <div
-                    key={step.id}
-                    className={`flex items-center gap-2 text-sm ${
-                      step.id === currentStep
-                        ? 'text-primary font-medium'
-                        : step.id < currentStep
-                          ? 'text-muted-foreground'
-                          : 'text-muted-foreground/50'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{step.title}</span>
+        {/* Progress */}
+        <div className="space-y-2">
+          <Progress value={progress} className="h-1.5" />
+          <div className="flex justify-between">
+            {steps.map(step => {
+              const Icon = step.icon
+              return (
+                <div
+                  key={step.id}
+                  className={`flex flex-col items-center gap-1 ${currentStep >= step.id ? 'text-primary' : 'text-muted-foreground'}`}
+                >
+                  <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors ${currentStep > step.id ? 'bg-primary border-primary text-primary-foreground' : currentStep === step.id ? 'border-primary text-primary' : 'border-muted text-muted-foreground'}`}>
+                    {currentStep > step.id ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
                   </div>
-                )
-              })}
-            </div>
+                  <span className="text-[10px] font-medium hidden sm:block">{step.title}</span>
+                </div>
+              )
+            })}
           </div>
+        </div>
 
-          <Form {...form}>
-            <form className="space-y-4">
-              {/* Step 1: Basic Information */}
-              {currentStep === 1 && (
-                <div className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="code"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Game Code</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., MON590"
-                            {...field}
-                            value={field.value as string}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Unique identifier for the game (2-10 characters)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+        <Form {...form}>
+          <form className="space-y-4 py-2">
 
+            {/* ── Step 1: Basic Info ── */}
+            {currentStep === 1 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="name"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Game Name</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., Monday Special"
-                            {...field}
-                            value={field.value as string}
-                          />
-                        </FormControl>
+                        <FormControl><Input placeholder="e.g. NoonRush" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
                   <FormField
                     control={form.control}
-                    name="game_category"
+                    name="code"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Game Category</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value as string}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select game category" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="national">National</SelectItem>
-                            <SelectItem value="private">Private</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormDescription>
-                          National games are regulated by NLA, Private games are for specific
-                          operators
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description (Optional)</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Enter game description..."
-                            className="resize-none"
-                            {...field}
-                            value={field.value as string}
-                          />
-                        </FormControl>
+                        <FormLabel>Game Code</FormLabel>
+                        <FormControl><Input placeholder="e.g. NR01" {...field} onChange={e => field.onChange(e.target.value.toUpperCase())} /></FormControl>
+                        <FormDescription>Short unique identifier</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-              )}
 
-              {/* Step 2: Format & Bet Types */}
-              {currentStep === 2 && (
-                <div className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Brief description..." className="resize-none" rows={2} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+              </div>
+            )}
+
+            {/* ── Step 2: Schedule ── */}
+            {currentStep === 2 && (
+              <div className="space-y-5">
+                {/* Frequency */}
+                <FormField
+                  control={form.control}
+                  name="draw_frequency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Draw Frequency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select frequency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="daily">Daily — draw every day</SelectItem>
+                          <SelectItem value="weekly">Weekly — draw on selected day(s) each week</SelectItem>
+                          <SelectItem value="bi_weekly">Bi-Weekly — draw every 2 weeks</SelectItem>
+                          <SelectItem value="monthly">Monthly — one draw per month</SelectItem>
+                          <SelectItem value="special">Special — one-time draw only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {frequency === 'special' && 'One draw will be scheduled for the whole period.'}
+                        {frequency === 'monthly' && 'One draw per month, placed on the last Saturday (or configured draw day).'}
+                        {frequency === 'daily' && 'A draw will run every day at the configured draw time.'}
+                        {(frequency === 'weekly' || frequency === 'bi_weekly') && 'Select which day(s) of the week draws happen.'}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Draw days (weekly / bi-weekly only) */}
+                {(frequency === 'weekly' || frequency === 'bi_weekly') && (
+                  <div className="space-y-2">
+                    <FormLabel>Draw Day(s)</FormLabel>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS.map(day => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleDrawDay(day)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${drawDays.includes(day) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-foreground border-border hover:border-primary/50'}`}
+                        >
+                          {day.slice(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+                    {drawDays.length === 0 && (
+                      <p className="text-xs text-destructive">Select at least one draw day</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Draw time + cutoff */}
+                <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="format"
+                    name="draw_time"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Game Format</FormLabel>
+                        <FormLabel>Draw Time</FormLabel>
+                        <FormControl><Input type="time" {...field} /></FormControl>
+                        <FormDescription>Time the draw runs (Ghana time, GMT+0)</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sales_cutoff_minutes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sales Cutoff</FormLabel>
                         <Select
-                          onValueChange={handleFormatChange}
-                          defaultValue={field.value as string}
+                          value={String(field.value)}
+                          onValueChange={v => field.onChange(parseInt(v))}
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select game format" />
+                              <SelectValue />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {gameFormatOptions.map(format => (
-                              <SelectItem key={format.value} value={format.value}>
-                                {format.label}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="15">15 min before draw</SelectItem>
+                            <SelectItem value="30">30 min before draw</SelectItem>
+                            <SelectItem value="60">1 hour before draw</SelectItem>
+                            <SelectItem value="120">2 hours before draw</SelectItem>
+                            <SelectItem value="360">6 hours before draw</SelectItem>
+                            <SelectItem value="720">12 hours before draw</SelectItem>
+                            <SelectItem value="1440">24 hours before draw</SelectItem>
                           </SelectContent>
                         </Select>
-                        <FormDescription>
-                          The format defines how many numbers players pick and from what range
-                        </FormDescription>
+                        <FormDescription>Ticket sales close this long before the draw</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  {/* Display current format details */}
-                  <div className="rounded-lg border p-4 bg-muted/50">
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Numbers to Select:</span>
-                        <div className="font-medium">{form.watch('selection_count')}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Number Range:</span>
-                        <div className="font-medium">
-                          {form.watch('number_range_min')} - {form.watch('number_range_max')}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Format:</span>
-                        <div className="font-medium">{form.watch('format')}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Bet Types Configuration */}
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="font-semibold mb-2">Available Bet Types</h3>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Select which bet types players can use for this game and configure their win
-                        multipliers.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      {availableBetTypes.map(betType => {
-                        const currentBetTypes = form.watch('bet_types')
-                        const currentBetType = currentBetTypes.find(bt => bt.id === betType.id)
-                        const isEnabled = currentBetType?.enabled || false
-                        const currentMultiplier = currentBetType?.multiplier || betType.multiplier
-
-                        return (
-                          <div
-                            key={betType.id}
-                            className="flex items-center justify-between rounded-lg border p-4"
-                          >
-                            <div className="space-y-0.5">
-                              <div className="flex items-center space-x-3">
-                                <input
-                                  type="checkbox"
-                                  checked={isEnabled}
-                                  onChange={() => handleBetTypeToggle(betType.id)}
-                                  className="rounded border-gray-300"
-                                />
-                                <div>
-                                  <div className="font-medium">{betType.name}</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    Default multiplier: {betType.multiplier}x
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            {isEnabled && (
-                              <div className="flex items-center space-x-2">
-                                <span className="text-sm text-muted-foreground">Multiplier:</span>
-                                <Input
-                                  type="number"
-                                  value={currentMultiplier}
-                                  onChange={e =>
-                                    handleMultiplierChange(betType.id, parseInt(e.target.value))
-                                  }
-                                  className="w-20"
-                                  min="1"
-                                  max="10000"
-                                />
-                                <span className="text-sm text-muted-foreground">x</span>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {form.getValues('bet_types').filter(bt => bt.enabled).length === 0 && (
-                      <div className="rounded-lg border border-destructive/50 p-4 text-sm text-destructive">
-                        Please enable at least one bet type for this game.
-                      </div>
-                    )}
-                  </div>
                 </div>
-              )}
 
-              {/* Step 3: Pricing & Limits */}
-              {currentStep === 3 && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="start_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormDescription>When the game begins accepting ticket sales</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {(frequency === 'special' || frequency === 'monthly') && (
                     <FormField
                       control={form.control}
-                      name="base_price"
+                      name="end_date"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Base Ticket Price (₵)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.50"
-                              min="0.50"
-                              max="200"
-                              {...field}
-                              value={field.value as number}
-                              onChange={e => field.onChange(parseFloat(e.target.value))}
-                            />
-                          </FormControl>
-                          <FormDescription>Base price for a single ticket</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="max_tickets_per_player"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Tickets Per Player</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="1"
-                              max="100"
-                              {...field}
-                              value={field.value as number}
-                              onChange={e => field.onChange(parseInt(e.target.value))}
-                            />
-                          </FormControl>
-                          <FormDescription>Maximum tickets per player</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="max_tickets_per_transaction"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Tickets Per Transaction</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="1"
-                              max="50"
-                              {...field}
-                              value={field.value as number}
-                              onChange={e => field.onChange(parseInt(e.target.value))}
-                            />
-                          </FormControl>
-                          <FormDescription>Maximum tickets per single transaction</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="multi_draw_enabled"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">Multi-Draw</FormLabel>
-                            <FormDescription>
-                              Allow players to buy tickets for multiple draws
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <input
-                              type="checkbox"
-                              checked={field.value as boolean}
-                              onChange={e => field.onChange(e.target.checked)}
-                              className="rounded border-gray-300"
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {form.watch('multi_draw_enabled') && (
-                    <FormField
-                      control={form.control}
-                      name="max_draws_advance"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Advance Draws</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="1"
-                              max="30"
-                              {...field}
-                              value={field.value as number}
-                              onChange={e => field.onChange(parseInt(e.target.value))}
-                            />
-                          </FormControl>
+                          <FormLabel>{frequency === 'special' ? 'Draw Date' : 'End Date'}</FormLabel>
+                          <FormControl><Input type="date" {...field} /></FormControl>
                           <FormDescription>
-                            Maximum number of future draws players can purchase
+                            {frequency === 'special' ? 'The date of this one-time draw' : 'When the game ends'}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -741,222 +451,194 @@ export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
                     />
                   )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Step 4: Schedule */}
-              {currentStep === 4 && (
-                <div className="space-y-4">
+            {/* ── Step 3: Tickets ── */}
+            {currentStep === 3 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
                   <FormField
                     control={form.control}
-                    name="draw_frequency"
+                    name="base_price"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Draw Frequency</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value as string}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select frequency" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="daily">Daily</SelectItem>
-                            <SelectItem value="weekly">Weekly</SelectItem>
-                            <SelectItem value="bi_weekly">Bi-Weekly</SelectItem>
-                            <SelectItem value="monthly">Monthly</SelectItem>
-                            <SelectItem value="special">Special</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>Ticket Price (₵)</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.50" min="0.50" {...field}
+                            value={field.value ?? ''}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value)
+                              field.onChange(isNaN(v) ? '' : v)
+                            }} />
+                        </FormControl>
+                        <FormDescription>Price per ticket</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="total_tickets"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Total Tickets</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" {...field}
+                            value={field.value ?? ''}
+                            onChange={e => {
+                              const v = parseInt(e.target.value)
+                              field.onChange(isNaN(v) ? '' : v)
+                            }} />
+                        </FormControl>
+                        <FormDescription>Max tickets for sale</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="max_tickets_per_player"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Max per Player</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" {...field}
+                            value={field.value ?? ''}
+                            onChange={e => {
+                              const v = parseInt(e.target.value)
+                              field.onChange(isNaN(v) ? '' : v)
+                            }} />
+                        </FormControl>
+                        <FormDescription>Per player limit</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            )}
 
-                  {(form.watch('draw_frequency') === 'weekly' ||
-                    form.watch('draw_frequency') === 'bi_weekly') && (
-                    <FormField
-                      control={form.control}
-                      name="draw_days"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Draw Days</FormLabel>
-                          <div className="grid grid-cols-2 gap-2">
-                            {weekDays.map(day => (
-                              <label
-                                key={day.value}
-                                className="flex items-center space-x-2 cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  value={day.value}
-                                  checked={(field.value as string[])?.includes(day.value)}
-                                  onChange={e => {
-                                    const currentDays = (field.value as string[]) || []
-                                    const updatedDays = e.target.checked
-                                      ? [...currentDays, day.value]
-                                      : currentDays.filter((d: string) => d !== day.value)
-                                    field.onChange(updatedDays)
-                                  }}
-                                  className="rounded border-gray-300"
-                                />
-                                <span className="text-sm">{day.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+            {/* ── Step 4: Prize & Rules ── */}
+            {currentStep === 4 && (
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="prize_details"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prize Details</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="e.g., 1st Prize: BMW 3 Series&#10;2nd Prize: GHS 50,000 cash&#10;3rd Prize: iPhone 15 Pro"
+                          className="resize-none"
+                          rows={5}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>Describe all prizes available in this game</FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
+                />
+                <FormField
+                  control={form.control}
+                  name="rules"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rules</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="e.g., 1. One ticket per transaction&#10;2. Winner must claim prize within 90 days&#10;3. Open to Ghana residents only"
+                          className="resize-none"
+                          rows={5}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>Terms and conditions players must agree to</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
-                  <FormField
-                    control={form.control}
-                    name="draw_time"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Draw Time (GMT) <span className="text-destructive">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="time"
-                            {...field}
-                            value={field.value as string}
-                            required
-                            placeholder="HH:MM"
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          When will the draw take place? (Required - Ghana is in GMT timezone)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
+            {/* ── Step 5: Logo & Review ── */}
+            {currentStep === 5 && (
+              <div className="space-y-6">
+                {/* Logo upload */}
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Game Logo <span className="text-muted-foreground font-normal">(optional)</span></p>
+                  <div
+                    className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {logoPreview ? (
+                      <img src={logoPreview} alt="Logo preview" className="h-24 w-24 object-contain rounded-lg" />
+                    ) : (
+                      <>
+                        <Image className="h-10 w-10 text-muted-foreground/40" />
+                        <p className="text-sm text-muted-foreground">Click to upload logo</p>
+                        <p className="text-xs text-muted-foreground/60">PNG, JPG up to 2MB</p>
+                      </>
                     )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="sales_cutoff_minutes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Sales Cutoff (minutes before draw)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            value={field.value as number}
-                            onChange={e => field.onChange(parseInt(e.target.value))}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          How many minutes before the draw should sales stop
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+                  {logoPreview && (
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive"
+                      onClick={() => { setLogoPreview(null); form.setValue('logo_url', '') }}>
+                      Remove logo
+                    </Button>
+                  )}
                 </div>
-              )}
 
-              {/* Step 5: Review & Submit */}
-              {currentStep === 5 && (
-                <div className="space-y-4">
-                  <div className="rounded-lg border p-4 space-y-3">
-                    <h3 className="font-semibold">Review Game Configuration</h3>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Code:</span>
-                        <span className="font-medium">{form.watch('code')}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Name:</span>
-                        <span className="font-medium">{form.watch('name')}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Category:</span>
-                        <span className="font-medium capitalize">
-                          {form.watch('game_category')}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Format:</span>
-                        <span className="font-medium">{form.watch('format')}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Base Price:</span>
-                        <span className="font-medium">₵{form.watch('base_price')}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Number Range:</span>
-                        <span className="font-medium">
-                          {form.watch('number_range_min')} - {form.watch('number_range_max')}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Selection Count:</span>
-                        <span className="font-medium">{form.watch('selection_count')}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Draw Frequency:</span>
-                        <span className="font-medium capitalize">
-                          {form.watch('draw_frequency').replace('_', ' ')}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Enabled Bet Types:</span>
-                        <span className="font-medium">
-                          {form
-                            .getValues('bet_types')
-                            .filter(bt => bt.enabled)
-                            .map(bt => bt.name)
-                            .join(', ') || 'None'}
-                        </span>
-                      </div>
+                {/* Review summary */}
+                <div className="rounded-lg border divide-y text-sm">
+                  {[
+                    { label: 'Name',          value: form.watch('name') },
+                    { label: 'Code',          value: form.watch('code') },
+                    { label: 'Frequency',     value: freqLabel[form.watch('draw_frequency')] },
+                    { label: 'Draw Time',     value: form.watch('draw_time') },
+                    ...(form.watch('draw_frequency') === 'weekly' || form.watch('draw_frequency') === 'bi_weekly'
+                      ? [{ label: 'Draw Days', value: (form.watch('draw_days') || []).join(', ') }]
+                      : []),
+                    { label: 'Sales Cutoff',  value: `${form.watch('sales_cutoff_minutes')} min before draw` },
+                    { label: 'Start Date',    value: form.watch('start_date') || '—' },
+                    ...(form.watch('draw_frequency') === 'special' || form.watch('draw_frequency') === 'monthly'
+                      ? [{ label: form.watch('draw_frequency') === 'special' ? 'Draw Date' : 'End Date', value: form.watch('end_date') || '—' }]
+                      : []),
+                    { label: 'Ticket Price',  value: `₵${form.watch('base_price')}` },
+                    { label: 'Total Tickets', value: form.watch('total_tickets')?.toLocaleString() },
+                    { label: 'Max per Player',value: form.watch('max_tickets_per_player')?.toLocaleString() },
+                  ].map(row => (
+                    <div key={row.label} className="flex justify-between px-4 py-2.5">
+                      <span className="text-muted-foreground">{row.label}</span>
+                      <span className="font-medium">{row.value || '—'}</span>
                     </div>
-                  </div>
-
-                  <div className="rounded-lg bg-muted p-4">
-                    <p className="text-sm text-muted-foreground">
-                      Once submitted, this game will be sent for approval. You will be notified when
-                      the game is approved and ready to be activated.
-                    </p>
-                  </div>
+                  ))}
                 </div>
-              )}
-            </form>
-          </Form>
-        </div>
+              </div>
+            )}
 
-        <DialogFooter className="gap-2">
+          </form>
+        </Form>
+
+        <DialogFooter className="gap-2 pt-2">
           {currentStep > 1 && (
             <Button variant="outline" onClick={handleBack} disabled={createGameMutation.isPending}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
           )}
-
           <div className="flex-1" />
-
-          <Button variant="outline" onClick={onClose} disabled={createGameMutation.isPending}>
-            Cancel
-          </Button>
-
+          <Button variant="outline" onClick={handleClose} disabled={createGameMutation.isPending}>Cancel</Button>
           <Button onClick={handleNext} disabled={createGameMutation.isPending}>
             {createGameMutation.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
-              </>
-            ) : currentStep === 5 ? (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                Create Game
-              </>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+            ) : currentStep === steps.length ? (
+              <><Check className="mr-2 h-4 w-4" />Create Game</>
             ) : (
-              <>
-                Next
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </>
+              <>Next<ArrowRight className="ml-2 h-4 w-4" /></>
             )}
           </Button>
         </DialogFooter>

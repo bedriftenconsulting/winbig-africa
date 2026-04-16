@@ -75,8 +75,8 @@ func convertProtoOrganizerFilter(protoOrg string) *models.Organizer {
 	case "ORGANIZER_NLA":
 		org := models.OrganizerNLA
 		return &org
-	case "ORGANIZER_RAND_LOTTERY":
-		org := models.OrganizerRandLottery
+	case "ORGANIZER_WINBIG_AFRICA", "ORGANIZER_RAND_LOTTERY", "rand_lottery", "winbig_africa":
+		org := models.OrganizerWinBig
 		return &org
 	default:
 		return nil

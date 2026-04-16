@@ -395,7 +395,9 @@ func (bl *BetLine) Validate() error {
 		amount = bl.Amount // Legacy support
 	}
 
-	if len(numbers) == 0 && len(bl.Banker) == 0 {
+	// RAFFLE bets don't require selected numbers — ticket is randomly assigned
+	isRaffle := bl.BetType == "RAFFLE" || bl.BetType == "raffle"
+	if !isRaffle && len(numbers) == 0 && len(bl.Banker) == 0 {
 		return fmt.Errorf("bet line must have selected numbers or banker numbers")
 	}
 	if amount <= 0 {

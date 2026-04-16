@@ -367,7 +367,7 @@ func (h *agentHandlerImpl) createAgentWithAuth(w http.ResponseWriter, r *http.Re
 		PhoneNumber:      req.PhoneNumber,
 		Address:          req.Address,
 		CreatedBy:        req.CreatedBy,
-		OnboardingMethod: "RAND_LOTTERY_LTD_DIRECT", // Default onboarding method for admin-created agents
+		OnboardingMethod: "WINBIG_AFRICA_DIRECT", // Default onboarding method for admin-created agents
 	}
 
 	if req.CommissionPercentage != nil {

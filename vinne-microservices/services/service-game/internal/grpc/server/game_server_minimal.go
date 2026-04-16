@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	pb "github.com/randco/randco-microservices/proto/game/v1"
+	"github.com/randco/randco-microservices/services/service-game/internal/grpc/clients"
 	"github.com/randco/randco-microservices/services/service-game/internal/models"
 	"github.com/randco/randco-microservices/services/service-game/internal/services"
 	"go.opentelemetry.io/otel/attribute"
@@ -21,13 +22,15 @@ type GameServerMinimal struct {
 	pb.UnimplementedGameServiceServer
 	gameService         services.GameService
 	gameScheduleService services.GameScheduleService
+	drawClient          clients.DrawServiceClient // optional: creates Draw records in draw service
 }
 
 // NewGameServerMinimal creates a new minimal game server
-func NewGameServerMinimal(gameService services.GameService, gameScheduleService services.GameScheduleService) *GameServerMinimal {
+func NewGameServerMinimal(gameService services.GameService, gameScheduleService services.GameScheduleService, drawClient clients.DrawServiceClient) *GameServerMinimal {
 	return &GameServerMinimal{
 		gameService:         gameService,
 		gameScheduleService: gameScheduleService,
+		drawClient:          drawClient,
 	}
 }
 
@@ -473,18 +476,87 @@ func (s *GameServerMinimal) GetApprovals(ctx context.Context, req *pb.GetApprova
 }
 */
 
-// Schedule Game (existing scheduling - not implemented)
+// ScheduleGame creates a schedule entry for a specific game and immediately creates a Draw record
 func (s *GameServerMinimal) ScheduleGame(ctx context.Context, req *pb.ScheduleGameRequest) (*pb.ScheduleGameResponse, error) {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("grpc.method", "ScheduleGame"),
+		attribute.String("game_id", req.GameId),
+	)
+
+	if s.gameScheduleService == nil {
+		return &pb.ScheduleGameResponse{Success: false, Message: "Schedule service not available"}, nil
+	}
+
+	gameID, err := uuid.Parse(req.GameId)
+	if err != nil {
+		return &pb.ScheduleGameResponse{Success: false, Message: "Invalid game ID format"}, nil
+	}
+
+	start := req.ScheduledStart.AsTime()
+	end := req.ScheduledEnd.AsTime()
+	draw := req.ScheduledDraw.AsTime()
+
+	schedule, err := s.gameScheduleService.ScheduleGame(ctx, gameID, start, end, draw, req.Frequency)
+	if err != nil {
+		span.RecordError(err)
+		return &pb.ScheduleGameResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	// Attach notes from request if provided
+	if req.Notes != "" && schedule.Notes == nil {
+		schedule.Notes = &req.Notes
+	}
+
+	// Create a Draw record in the draw service so it's immediately visible
+	if s.drawClient != nil {
+		game, gameErr := s.gameService.GetGame(ctx, gameID)
+		if gameErr == nil && game != nil {
+			if _, drawErr := s.drawClient.CreateDraw(ctx, game, schedule, nil); drawErr != nil {
+				log.Printf("[ScheduleGame] WARNING: failed to create draw record for schedule %s: %v", schedule.ID, drawErr)
+			}
+		}
+	}
+
 	return &pb.ScheduleGameResponse{
-		Success: false,
-		Message: "Not implemented",
+		Schedule: convertGameScheduleToProto(schedule),
+		Success:  true,
+		Message:  "Game scheduled successfully",
 	}, nil
 }
 
+// GetGameSchedule retrieves all schedules for a specific game
 func (s *GameServerMinimal) GetGameSchedule(ctx context.Context, req *pb.GetGameScheduleRequest) (*pb.GetGameScheduleResponse, error) {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("grpc.method", "GetGameSchedule"),
+		attribute.String("game_id", req.GameId),
+	)
+
+	if s.gameScheduleService == nil {
+		return &pb.GetGameScheduleResponse{Success: false, Message: "Schedule service not available"}, nil
+	}
+
+	gameID, err := uuid.Parse(req.GameId)
+	if err != nil {
+		return &pb.GetGameScheduleResponse{Success: false, Message: "Invalid game ID format"}, nil
+	}
+
+	schedules, err := s.gameScheduleService.GetGameSchedule(ctx, gameID)
+	if err != nil {
+		span.RecordError(err)
+		return &pb.GetGameScheduleResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	pbSchedules := make([]*pb.GameSchedule, 0, len(schedules))
+	for _, sc := range schedules {
+		pbSchedules = append(pbSchedules, convertGameScheduleToProto(sc))
+	}
+
 	return &pb.GetGameScheduleResponse{
-		Success: false,
-		Message: "Not implemented",
+		Schedules: pbSchedules,
+		Success:   true,
+		Message:   fmt.Sprintf("Found %d schedules", len(pbSchedules)),
 	}, nil
 }
 
@@ -618,18 +690,34 @@ func (s *GameServerMinimal) GenerateWeeklySchedule(ctx context.Context, req *pb.
 		}, nil
 	}
 
-	// Convert schedules to protobuf
+	// Convert schedules to protobuf and create Draw records for each schedule
 	pbSchedules := make([]*pb.GameSchedule, 0, len(schedules))
+	drawsCreated := 0
 	for _, schedule := range schedules {
 		pbSchedules = append(pbSchedules, convertGameScheduleToProto(schedule))
+
+		// Create Draw record immediately so it's visible in the Draws page
+		if s.drawClient != nil {
+			game, gameErr := s.gameService.GetGame(ctx, schedule.GameID)
+			if gameErr == nil && game != nil {
+				if _, drawErr := s.drawClient.CreateDraw(ctx, game, schedule, nil); drawErr != nil {
+					log.Printf("[GenerateWeeklySchedule] WARNING: failed to create draw for schedule %s: %v", schedule.ID, drawErr)
+				} else {
+					drawsCreated++
+				}
+			}
+		}
 	}
 
-	span.SetAttributes(attribute.Int("schedules.created", len(pbSchedules)))
+	span.SetAttributes(
+		attribute.Int("schedules.created", len(pbSchedules)),
+		attribute.Int("draws.created", drawsCreated),
+	)
 
 	return &pb.GenerateWeeklyScheduleResponse{
 		Schedules:        pbSchedules,
 		Success:          true,
-		Message:          "Weekly schedule generated successfully",
+		Message:          fmt.Sprintf("Weekly schedule generated successfully (%d schedules, %d draws created)", len(pbSchedules), drawsCreated),
 		SchedulesCreated: int32(len(pbSchedules)),
 	}, nil
 }

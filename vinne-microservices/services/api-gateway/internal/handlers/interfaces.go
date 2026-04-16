@@ -173,6 +173,7 @@ type DrawResultHandler interface {
 	GetDrawStatistics(w http.ResponseWriter, r *http.Request) error
 	GetDrawTickets(w http.ResponseWriter, r *http.Request) error
 	GetPublicCompletedDraws(w http.ResponseWriter, r *http.Request) error
+	GetPublicWinners(w http.ResponseWriter, r *http.Request) error
 	GetCompletedDraws(w http.ResponseWriter, r *http.Request) error
 	UpdateMachineNumbers(w http.ResponseWriter, r *http.Request) error
 	GetAgentDrawHistory(w http.ResponseWriter, r *http.Request) error

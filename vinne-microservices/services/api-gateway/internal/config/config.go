@@ -325,6 +325,8 @@ func setViperDefaults() {
 		"http://localhost:6178",
 		"http://localhost:5174",
 		"http://localhost:3000",
+		"http://localhost:8080",
+		"http://localhost:8081",
 	})
 	viper.SetDefault("security.allowed_headers", []string{
 		"Accept",

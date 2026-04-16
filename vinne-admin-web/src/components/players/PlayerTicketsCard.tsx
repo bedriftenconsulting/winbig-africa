@@ -86,7 +86,7 @@ export function PlayerTicketsCard({ playerId }: PlayerTicketsCardProps) {
       <div className="max-w-md mx-auto bg-white border-2 border-dashed border-gray-300 rounded-lg p-6 font-mono text-sm">
         {/* Ticket Header */}
         <div className="text-center border-b border-dashed border-gray-300 pb-4 mb-4">
-          <h2 className="font-bold text-lg">Spiel</h2>
+          <h2 className="font-bold text-lg">WinBig Africa</h2>
           <p className="text-xs text-gray-600">Licensed by National Lottery Authority</p>
           <p className="text-xs text-gray-600">Ghana</p>
         </div>

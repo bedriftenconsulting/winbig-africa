@@ -43,7 +43,9 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { drawService, type Ticket, type BetLine } from '@/services/draws'
+import { winnerSelectionService, type WinnerSelectionConfig } from '@/services/winnerSelectionService'
 import { formatCurrency } from '@/lib/utils'
 import { PermCombinationViewer } from '@/components/PermCombinationViewer'
 import { isPermBet, isBankerBet, getBetLineNumbers, getBetLineAmount } from '@/lib/bet-utils'
@@ -128,6 +130,11 @@ const DrawDetails: React.FC = () => {
   const [hasValidationErrors, setHasValidationErrors] = useState(false)
   const [hasDuplicateNumbers, setHasDuplicateNumbers] = useState(false)
 
+  // Winner selection state
+  const [winnerSelectionMethod, setWinnerSelectionMethod] = useState<'google_rng' | 'cryptographic_rng'>('google_rng')
+  const [maxWinners, setMaxWinners] = useState(1)
+  const [preDrawEmailSent, setPreDrawEmailSent] = useState(false)
+
   // Machine numbers state
   const [machineNumbersDialogOpen, setMachineNumbersDialogOpen] = useState(false)
   const [machineNumbers, setMachineNumbers] = useState<number[]>([])
@@ -163,10 +170,12 @@ const DrawDetails: React.FC = () => {
     if (!draw || getStatusString(draw.status) !== 'in_progress') return
 
     const updateCountdown = () => {
-      const endDate = protoTimestampToDate(draw.end_date)
-      // Check if endDate is Unix epoch (invalid/missing date)
-      if (endDate.getTime() === 0) {
-        setCountdown('End date not set')
+      // Use scheduled_time (draw time) as the countdown target; fall back to end_date
+      const rawEnd = draw.end_date ? protoTimestampToDate(draw.end_date) : null
+      const rawScheduled = draw.scheduled_time ? protoTimestampToDate(draw.scheduled_time) : null
+      const endDate = (rawEnd && rawEnd.getTime() !== 0) ? rawEnd : rawScheduled
+      if (!endDate || endDate.getTime() === 0) {
+        setCountdown('Draw time not set')
         return
       }
 
@@ -210,10 +219,44 @@ const DrawDetails: React.FC = () => {
 
   // Stage 1: Draw Preparation - Complete
   const completeDrawPreparationMutation = useMutation({
-    mutationFn: () => drawService.completeDrawPreparation(drawId),
+    mutationFn: async () => {
+      // Attempt pre-draw email notification — non-blocking if endpoint not available
+      if (!preDrawEmailSent) {
+        try {
+          await winnerSelectionService.sendPreDrawNotification(drawId)
+          setPreDrawEmailSent(true)
+        } catch (err) {
+          console.warn('Pre-draw notification skipped (endpoint not available):', err)
+        }
+      }
+      return drawService.completeDrawPreparation(drawId)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['draw', drawId] })
-      toast({ title: 'Draw preparation completed' })
+      toast({ 
+        title: 'Draw preparation completed',
+        description: 'Draw is ready for winner selection'
+      })
+    },
+  })
+
+  // Stage 2: Winner Selection using Google RNG
+  const executeWinnerSelectionMutation = useMutation({
+    mutationFn: async () => {
+      const totalTickets = tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0
+      
+      if (winnerSelectionMethod === 'google_rng') {
+        return winnerSelectionService.executeGoogleRNGSelection(drawId, totalTickets, maxWinners)
+      } else {
+        return winnerSelectionService.executeCryptographicSelection(drawId, totalTickets, maxWinners)
+      }
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['draw', drawId] })
+      toast({ 
+        title: 'Winner Selection Completed',
+        description: `${result.selected_winners.length} winner(s) selected using ${winnerSelectionMethod}`
+      })
     },
   })
 
@@ -382,7 +425,7 @@ const DrawDetails: React.FC = () => {
       </div>
       <div className="text-sm space-y-1">
         <div>
-          <strong>Stake:</strong> {formatCurrency(ticket.stake_amount || ticket.total_amount || 0)}
+          <strong>Amount:</strong> {formatCurrency(ticket.stake_amount || ticket.total_amount || 0)}
         </div>
         <div>
           <strong>Channel:</strong>{' '}
@@ -498,7 +541,7 @@ const DrawDetails: React.FC = () => {
       <div className="max-w-md mx-auto bg-white border-2 border-dashed border-gray-300 rounded-lg p-6 font-mono text-sm">
         {/* Ticket Header */}
         <div className="text-center border-b border-dashed border-gray-300 pb-4 mb-4">
-          <h2 className="font-bold text-lg">Spiel</h2>
+          <h2 className="font-bold text-lg">WinBig Africa</h2>
           <p className="text-xs text-gray-600">Licensed by National Lottery Authority</p>
           <p className="text-xs text-gray-600">Ghana</p>
         </div>
@@ -520,7 +563,7 @@ const DrawDetails: React.FC = () => {
             <span>#{draw?.draw_number}</span>
           </div>
           <div className="flex justify-between">
-            <span>STAKE:</span>
+            <span>AMOUNT:</span>
             <span className="font-bold">
               {formatCurrency(ticket.stake_amount || ticket.total_amount || 0)}
             </span>
@@ -825,7 +868,7 @@ const DrawDetails: React.FC = () => {
                 </tr>
               )}
               <tr className="border-b">
-                <td className="p-3 text-muted-foreground">Stake Amount</td>
+                <td className="p-3 text-muted-foreground">Amount</td>
                 <td className="p-3 font-semibold">
                   {formatCurrency(ticket.stake_amount || ticket.total_amount || 0)}
                 </td>
@@ -902,18 +945,17 @@ const DrawDetails: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate({ to: '/draws' })}>
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: '/draws' })}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Draw #{draw.draw_number}</h1>
-            <p className="text-sm text-muted-foreground">
-              {draw.game_name || 'Unknown Game'} •{' '}
-              {formatInGhanaTime(draw.draw_date || draw.scheduled_time, 'PPP')}
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">Draw #{draw.draw_number}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {draw.game_name || 'Unknown Game'} · {formatInGhanaTime(draw.draw_date || draw.scheduled_time, 'PPP')}
             </p>
           </div>
         </div>
@@ -926,8 +968,8 @@ const DrawDetails: React.FC = () => {
             </Button>
           )}
           {getStatusString(draw.status) === 'in_progress' && countdown && (
-            <Badge variant="outline" className="text-lg px-4">
-              <Clock className="h-4 w-4 mr-2" />
+            <Badge variant="outline" className="text-sm px-3">
+              <Clock className="h-3.5 w-3.5 mr-1.5" />
               {countdown}
             </Badge>
           )}
@@ -944,7 +986,7 @@ const DrawDetails: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold">
               {ticketsLoading ? (
-                <span className="text-muted-foreground">...</span>
+                <span className="text-muted-foreground text-base">...</span>
               ) : (
                 (
                   (tickets?.total ?? 0) > 0 ? tickets!.total :
@@ -959,25 +1001,25 @@ const DrawDetails: React.FC = () => {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Stakes</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Tickets</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(
-                (() => {
-                  const fromTickets = tickets?.tickets?.reduce(
-                    (sum: number, t: Record<string, unknown>) =>
-                      sum + ((t.total_amount as number) || 0),
-                    0
-                  ) ?? 0
-                  if (fromTickets > 0) return fromTickets
-                  if ((statistics?.total_stakes ?? 0) > 0) return statistics!.total_stakes
-                  if ((draw.total_stakes ?? 0) > 0) return draw.total_stakes
-                  return draw.total_prize_pool ?? 0
-                })()
-              )}
+              {(() => {
+                const totalTickets = (
+                  (tickets?.total ?? 0) > 0 ? tickets!.total :
+                  (statistics?.total_tickets ?? 0) > 0 ? statistics!.total_tickets :
+                  (statistics?.total_tickets_sold ?? 0) > 0 ? statistics!.total_tickets_sold :
+                  (draw.total_tickets_sold ?? 0) > 0 ? draw.total_tickets_sold :
+                  0
+                )
+                return totalTickets.toLocaleString()
+              })()}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Total ticket entries
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -998,7 +1040,9 @@ const DrawDetails: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(statistics?.total_winnings || draw.total_winnings || 0)}
+              {draw.game_name && (statistics?.total_winners || 0) > 0
+                ? draw.game_name
+                : formatCurrency(statistics?.total_winnings || draw.total_winnings || 0)}
             </div>
           </CardContent>
         </Card>
@@ -1091,9 +1135,6 @@ const DrawDetails: React.FC = () => {
                         <div className="grid grid-cols-2 gap-2">
                           <div>Total Tickets: {draw.stage.preparation_data.tickets_locked}</div>
                           <div>
-                            Total Stakes: {formatCurrency(draw.stage.preparation_data.total_stakes)}
-                          </div>
-                          <div>
                             Sales Locked: {draw.stage.preparation_data.sales_locked ? 'Yes' : 'No'}
                           </div>
                           <div>
@@ -1109,7 +1150,7 @@ const DrawDetails: React.FC = () => {
 
                   <Separator />
 
-                  {/* Stage 2: Number Selection */}
+                  {/* Stage 2: Winner Selection */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1131,151 +1172,71 @@ const DrawDetails: React.FC = () => {
                           )}
                         </div>
                         <div>
-                          <h3 className="font-semibold">Physical Draw Recording</h3>
+                          <h3 className="font-semibold">Winner Selection</h3>
                           <p className="text-sm text-muted-foreground">
-                            Record winning numbers from physical draw
+                            Select winners using cryptographically secure randomization
                           </p>
                         </div>
                       </div>
                       {draw.stage?.current_stage === 2 &&
                         !isStageCompleted(draw.stage?.stage_status) && (
                           <div className="flex gap-2">
-                            {!draw.stage.number_selection_data?.is_verified && (
-                              <div className="flex flex-col gap-3 w-full">
-                                {/* Show attempt count only - not the numbers (for triple-entry validation integrity) */}
-                                {draw.stage.number_selection_data?.verification_attempts &&
-                                  draw.stage.number_selection_data.verification_attempts.length >
-                                    0 && (
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                      <div className="flex items-center gap-2">
-                                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
-                                          {
-                                            draw.stage.number_selection_data.verification_attempts
-                                              .length
-                                          }
-                                        </div>
-                                        <div>
-                                          <p className="text-sm font-medium text-blue-900">
-                                            {
-                                              draw.stage.number_selection_data.verification_attempts
-                                                .length
-                                            }{' '}
-                                            of 3 attempts completed
-                                          </p>
-                                          <p className="text-xs text-blue-700">
-                                            Previous entries are hidden to ensure independent
-                                            verification
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 w-full">
+                              <h4 className="font-semibold text-blue-900 mb-1">
+                                Select Winning Ticket
+                              </h4>
+                              <p className="text-xs text-blue-700 mb-3">
+                                Winner is selected using{' '}
+                                <a
+                                  href="https://www.random.org"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline font-medium"
+                                >
+                                  random.org
+                                </a>{' '}
+                                — true randomness from atmospheric noise, with no local algorithm interference.
+                              </p>
 
-                                {/* Number entry form - show if less than 3 attempts */}
-                                {(!draw.stage.number_selection_data?.verification_attempts ||
-                                  draw.stage.number_selection_data.verification_attempts.length <
-                                    3) && (
-                                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <h4 className="font-semibold text-blue-900">
-                                        Enter Physical Draw Numbers
-                                      </h4>
-                                      <Badge variant="default">
-                                        Attempt{' '}
-                                        {(draw.stage.number_selection_data?.verification_attempts
-                                          ?.length || 0) + 1}{' '}
-                                        of 3
-                                      </Badge>
-                                    </div>
-                                    <p className="text-sm text-blue-800 mb-4">
-                                      Enter the 5 winning numbers (1-90) from the physical draw.
-                                      Numbers must be entered 3 times for verification.
+                              <div className="space-y-4">
+                                <div>
+                                  <Label className="text-sm font-medium">Number of Winners</Label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    value={maxWinners}
+                                    onChange={(e) => setMaxWinners(parseInt(e.target.value) || 1)}
+                                    className="w-full mt-1"
+                                  />
+                                  <p className="text-xs text-blue-700 mt-1">
+                                    Number of winning tickets to randomly select
+                                  </p>
+                                </div>
+
+                                <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                                  <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                                    <p className="text-sm text-yellow-800">
+                                      <strong>Total Tickets:</strong> {tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0}
                                     </p>
-                                    <NumberInputSlots
-                                      value={verificationNumbers}
-                                      onChange={setVerificationNumbers}
-                                      onValidationChange={(isValid, hasDuplicates) => {
-                                        setHasValidationErrors(!isValid)
-                                        setHasDuplicateNumbers(hasDuplicates)
-                                      }}
-                                      disabled={recordPhysicalDrawMutation.isPending}
-                                      className="justify-center"
-                                    />
-                                    {hasDuplicateNumbers && (
-                                      <Alert variant="destructive" className="mt-3">
-                                        <AlertDescription>
-                                          Each number must be unique. Duplicate numbers are not
-                                          allowed.
-                                        </AlertDescription>
-                                      </Alert>
-                                    )}
-                                    <div className="flex justify-center mt-4">
-                                      <Button
-                                        onClick={() => {
-                                          if (
-                                            verificationNumbers.length === 5 &&
-                                            !hasDuplicateNumbers
-                                          ) {
-                                            recordPhysicalDrawMutation.mutate({
-                                              numbers: verificationNumbers,
-                                            })
-                                          } else {
-                                            toast({
-                                              title: 'Invalid Entry',
-                                              description: 'Please enter all 5 unique numbers',
-                                              variant: 'destructive',
-                                            })
-                                          }
-                                        }}
-                                        disabled={
-                                          verificationNumbers.length !== 5 ||
-                                          hasValidationErrors ||
-                                          hasDuplicateNumbers ||
-                                          recordPhysicalDrawMutation.isPending
-                                        }
-                                      >
-                                        {recordPhysicalDrawMutation.isPending
-                                          ? 'Recording...'
-                                          : 'Submit Attempt'}
-                                      </Button>
-                                    </div>
                                   </div>
-                                )}
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    Winners will be randomly selected from all valid ticket entries
+                                  </p>
+                                </div>
 
-                                {/* Show warning if 3 attempts don't match */}
-                                {draw.stage.number_selection_data?.verification_attempts?.length ===
-                                  3 &&
-                                  !draw.stage.number_selection_data?.is_verified && (
-                                    <Alert variant="destructive">
-                                      <AlertDescription className="flex items-center justify-between">
-                                        <span>
-                                          The 3 verification attempts do not match. You can start
-                                          over to re-enter the winning numbers.
-                                        </span>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => resetVerificationMutation.mutate()}
-                                          disabled={resetVerificationMutation.isPending}
-                                          className="ml-4 flex-shrink-0"
-                                        >
-                                          {resetVerificationMutation.isPending ? (
-                                            <>
-                                              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                              Resetting...
-                                            </>
-                                          ) : (
-                                            <>
-                                              <RefreshCw className="mr-2 h-4 w-4" />
-                                              Start Over
-                                            </>
-                                          )}
-                                        </Button>
-                                      </AlertDescription>
-                                    </Alert>
-                                  )}
+                                <Button
+                                  onClick={() => executeWinnerSelectionMutation.mutate()}
+                                  disabled={executeWinnerSelectionMutation.isPending || (tickets?.total || draw?.total_tickets_sold || 0) === 0}
+                                  className="w-full"
+                                >
+                                  {executeWinnerSelectionMutation.isPending
+                                    ? 'Contacting random.org...'
+                                    : `Select ${maxWinners > 1 ? maxWinners + ' Winners' : 'Winner'} via random.org`}
+                                </Button>
                               </div>
-                            )}
+                            </div>
                           </div>
                         )}
                     </div>
@@ -1284,18 +1245,28 @@ const DrawDetails: React.FC = () => {
                         <div className="space-y-2">
                           {draw.stage.number_selection_data.winning_numbers?.length > 0 && (
                             <div>
-                              <p className="text-sm font-medium mb-2">Winning Numbers:</p>
-                              <div className="flex gap-2">
-                                {draw.stage.number_selection_data.winning_numbers.map(
-                                  (num: number, idx: number) => (
-                                    <div
-                                      key={idx}
-                                      className="h-10 w-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold"
-                                    >
-                                      {num}
+                              <p className="text-sm font-medium mb-2">Selected Winners:</p>
+                              <div className="space-y-2">
+                                {/* Show winner positions and prizes */}
+                                <div className="grid gap-2">
+                                  {Array.from({ length: draw.stage.number_selection_data.winning_numbers.length }, (_, i) => (
+                                    <div key={i} className="flex items-center justify-between p-2 bg-white rounded border">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
+                                          {i + 1}{i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'} Place
+                                        </Badge>
+                                        <span className="text-sm">Winner Position {i + 1}</span>
+                                      </div>
+                                      <Badge variant="default">
+                                        Selected
+                                      </Badge>
                                     </div>
-                                  )
-                                )}
+                                  ))}
+                                </div>
+                                <Badge variant="default" className="mr-2">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  {draw.stage.number_selection_data.winning_numbers.length} Winner(s) Selected
+                                </Badge>
                               </div>
                             </div>
                           )}
@@ -1421,20 +1392,23 @@ const DrawDetails: React.FC = () => {
                               <TableHeader>
                                 <TableRow className="text-xs">
                                   <TableHead>Ticket Serial</TableHead>
-                                  <TableHead>Sale Date/Time</TableHead>
+                                  {(draw.stage.result_calculation_data.winning_tickets[0]?.bet_type as string)?.toUpperCase() !== 'RAFFLE' && (
+                                    <>
+                                      <TableHead>Sale Date/Time</TableHead>
+                                      <TableHead>Numbers</TableHead>
+                                      <TableHead>No. of Lines</TableHead>
+                                      <TableHead className="w-20">Matches</TableHead>
+                                    </>
+                                  )}
                                   <TableHead>Draw Date/Time</TableHead>
-                                  <TableHead>Numbers</TableHead>
                                   <TableHead>Game Type</TableHead>
-                                  <TableHead>No. of Lines</TableHead>
-                                  <TableHead className="w-20">Matches</TableHead>
-                                  <TableHead className="text-right">Stake</TableHead>
-                                  <TableHead className="text-right">Amount Won</TableHead>
-                                  <TableHead>Issuer</TableHead>
-                                  <TableHead>Terminal ID</TableHead>
+                                  <TableHead className="text-right">Ticket Price</TableHead>
+                                  <TableHead className="text-right">Prize</TableHead>
                                   <TableHead>Phone</TableHead>
-                                  <TableHead>Payment</TableHead>
                                   <TableHead>Status</TableHead>
-                                  <TableHead className="w-20">Big Win?</TableHead>
+                                  {(draw.stage.result_calculation_data.winning_tickets[0]?.bet_type as string)?.toUpperCase() !== 'RAFFLE' && (
+                                    <TableHead className="w-20">Big Win?</TableHead>
+                                  )}
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1453,14 +1427,34 @@ const DrawDetails: React.FC = () => {
                                         {ticket.serial_number as string}
                                       </TableCell>
 
-                                      {/* Sale Date/Time */}
-                                      <TableCell className="text-xs">
-                                        {ticket.created_at || ticket.purchased_at
-                                          ? new Date(
-                                              (ticket.created_at || ticket.purchased_at) as string
-                                            ).toLocaleString()
-                                          : '-'}
-                                      </TableCell>
+                                      {/* Conditional columns for NLA only */}
+                                      {(ticket.bet_type as string)?.toUpperCase() !== 'RAFFLE' && (
+                                        <>
+                                          {/* Sale Date/Time */}
+                                          <TableCell className="text-xs">
+                                            {ticket.created_at || ticket.purchased_at
+                                              ? new Date(
+                                                  (ticket.created_at || ticket.purchased_at) as string
+                                                ).toLocaleString()
+                                              : '-'}
+                                          </TableCell>
+
+                                          {/* Numbers */}
+                                          <TableCell className="font-mono text-xs">
+                                            {Array.isArray(ticket.numbers)
+                                              ? (ticket.numbers as number[]).join(', ')
+                                              : 'N/A'}
+                                          </TableCell>
+
+                                          {/* No. of Lines */}
+                                          <TableCell className="text-center">
+                                            {(ticket.lines_count as number) || 1}
+                                          </TableCell>
+
+                                          {/* Matches */}
+                                          <TableCell>{ticket.matches_count as number} of 5</TableCell>
+                                        </>
+                                      )}
 
                                       {/* Draw Date/Time */}
                                       <TableCell className="text-xs">
@@ -1471,27 +1465,12 @@ const DrawDetails: React.FC = () => {
                                             : '-'}
                                       </TableCell>
 
-                                      {/* Numbers */}
-                                      <TableCell className="font-mono text-xs">
-                                        {Array.isArray(ticket.numbers)
-                                          ? (ticket.numbers as number[]).join(', ')
-                                          : 'N/A'}
-                                      </TableCell>
-
                                       {/* Game Type (Bet Type) */}
                                       <TableCell>
                                         <Badge variant="outline">{ticket.bet_type as string}</Badge>
                                       </TableCell>
 
-                                      {/* No. of Lines */}
-                                      <TableCell className="text-center">
-                                        {(ticket.lines_count as number) || 1}
-                                      </TableCell>
-
-                                      {/* Matches */}
-                                      <TableCell>{ticket.matches_count as number} of 5</TableCell>
-
-                                      {/* Stake */}
+                                      {/* Ticket Price */}
                                       <TableCell className="text-right">
                                         {formatCurrency(
                                           typeof ticket.stake_amount === 'string'
@@ -1500,37 +1479,15 @@ const DrawDetails: React.FC = () => {
                                         )}
                                       </TableCell>
 
-                                      {/* Amount Won */}
+                                      {/* Prize */}
                                       <TableCell className="text-right font-bold text-green-600">
-                                        {formatCurrency(
-                                          typeof ticket.winning_amount === 'string'
-                                            ? parseInt(ticket.winning_amount)
-                                            : (ticket.winning_amount as number)
-                                        )}
-                                      </TableCell>
-
-                                      {/* POS Terminal (optional) */}
-                                      {/* Issuer */}
-                                      <TableCell className="font-mono text-xs">
-                                        {String(
-                                          (ticket.issuer_details as Record<string, unknown>)
-                                            ?.retailer_code ||
-                                            (ticket.issuer_details as Record<string, unknown>)
-                                              ?.player_id ||
-                                            (ticket.retailer_code as string) ||
-                                            (ticket.player_id as string) ||
-                                            '-'
-                                        )}
-                                      </TableCell>
-
-                                      {/* Terminal ID (optional) */}
-                                      <TableCell className="font-mono text-xs">
-                                        {String(
-                                          (ticket.issuer_details as Record<string, unknown>)
-                                            ?.terminal_id ||
-                                            (ticket.terminal_id as string) ||
-                                            '-'
-                                        )}
+                                        {(ticket.bet_type as string)?.toUpperCase() === 'RAFFLE'
+                                          ? <span className="text-green-700 font-semibold">{draw.game_name || 'Prize'}</span>
+                                          : formatCurrency(
+                                              typeof ticket.winning_amount === 'string'
+                                                ? parseInt(ticket.winning_amount)
+                                                : (ticket.winning_amount as number)
+                                            )}
                                       </TableCell>
 
                                       {/* Phone */}
@@ -1538,28 +1495,25 @@ const DrawDetails: React.FC = () => {
                                         {(ticket.customer_phone as string) || '-'}
                                       </TableCell>
 
-                                      {/* Payment */}
-                                      <TableCell className="text-xs capitalize">
-                                        {(ticket.payment_method as string) || '-'}
-                                      </TableCell>
-
                                       {/* Status */}
                                       <TableCell>
                                         <Badge variant="outline" className="text-xs capitalize">
-                                          {(ticket.status as string) || 'active'}
+                                          {(ticket.status as string) || 'won'}
                                         </Badge>
                                       </TableCell>
 
-                                      {/* Big Win? */}
-                                      <TableCell>
-                                        {ticket.is_big_win ? (
-                                          <Badge className="bg-orange-100 text-orange-800 text-xs">
-                                            Yes
-                                          </Badge>
-                                        ) : (
-                                          <span className="text-gray-400 text-xs">No</span>
-                                        )}
-                                      </TableCell>
+                                      {/* Big Win? — only for NLA */}
+                                      {(ticket.bet_type as string)?.toUpperCase() !== 'RAFFLE' && (
+                                        <TableCell>
+                                          {ticket.is_big_win ? (
+                                            <Badge className="bg-orange-100 text-orange-800 text-xs">
+                                              Yes
+                                            </Badge>
+                                          ) : (
+                                            <span className="text-gray-400 text-xs">No</span>
+                                          )}
+                                        </TableCell>
+                                      )}
                                     </TableRow>
                                   )
                                 )}
@@ -1652,7 +1606,7 @@ const DrawDetails: React.FC = () => {
                         <div>
                           <h3 className="font-semibold">Payout Processing</h3>
                           <p className="text-sm text-muted-foreground">
-                            Process payouts to retailer wallets
+                            Process payouts to player wallets
                           </p>
                         </div>
                       </div>
@@ -1819,7 +1773,7 @@ const DrawDetails: React.FC = () => {
                       <TableHead>Game Type</TableHead>
                       <TableHead>No. of Lines</TableHead>
                       <TableHead>Numbers</TableHead>
-                      <TableHead>Stake</TableHead>
+                      <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Amount Won</TableHead>
                       <TableHead>Terminal ID</TableHead>
@@ -1829,9 +1783,7 @@ const DrawDetails: React.FC = () => {
                   </TableHeader>
                   <TableBody>
                     {tickets?.tickets?.map((ticket: Record<string, unknown>) => (
-                      <HoverCard key={ticket.id as string} openDelay={300} closeDelay={100}>
-                        <HoverCardTrigger asChild>
-                          <TableRow className="cursor-pointer hover:bg-muted/50">
+                      <TableRow key={ticket.id as string} className="cursor-pointer hover:bg-muted/50">
                             {/* Ticket Number */}
                             <TableCell className="font-mono">
                               {ticket.serial_number as string}
@@ -2034,12 +1986,7 @@ const DrawDetails: React.FC = () => {
                                 </DialogContent>
                               </Dialog>
                             </TableCell>
-                          </TableRow>
-                        </HoverCardTrigger>
-                        <HoverCardContent className="w-80" side="top" align="center" sideOffset={8}>
-                          <TicketPreview ticket={ticket as unknown as Ticket} />
-                        </HoverCardContent>
-                      </HoverCard>
+                      </TableRow>
                     ))}
                   </TableBody>
                 </Table>

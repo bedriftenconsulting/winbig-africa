@@ -69,6 +69,12 @@ type CreateGameRequest struct {
 	MaxDrawsAdvance     int32     `json:"max_draws_advance,omitempty"`
 	WeeklySchedule      bool      `json:"weekly_schedule,omitempty"`
 	Description         string    `json:"description,omitempty"`
+	PrizeDetails        string    `json:"prize_details,omitempty"`
+	Rules               string    `json:"rules,omitempty"`
+	TotalTickets        int32     `json:"total_tickets,omitempty"`
+	StartDate           string    `json:"start_date,omitempty"`
+	EndDate             string    `json:"end_date,omitempty"`
+	Status              string    `json:"status,omitempty"`
 }
 
 // UpdateGameRequest represents the JSON request from frontend for updating a game
@@ -143,6 +149,12 @@ func (h *gameHandler) CreateGame(w http.ResponseWriter, r *http.Request) error {
 		MaxDrawsAdvance:     jsonReq.MaxDrawsAdvance,
 		WeeklySchedule:      jsonReq.WeeklySchedule,
 		Description:         jsonReq.Description,
+		PrizeDetails:        jsonReq.PrizeDetails,
+		Rules:               jsonReq.Rules,
+		TotalTickets:        jsonReq.TotalTickets,
+		StartDate:           jsonReq.StartDate,
+		EndDate:             jsonReq.EndDate,
+		Status:              jsonReq.Status,
 	}
 
 	client, err := h.grpcManager.GameServiceClient()
@@ -1318,6 +1330,8 @@ func (h *gameHandler) GetActiveGames(w http.ResponseWriter, r *http.Request) err
 			"max_draws_advance":      game.MaxDrawsAdvance,
 			"status":                 game.Status,
 			"description":            game.Description,
+			"logo_url":               game.LogoUrl,
+			"brand_color":            game.BrandColor,
 		}
 		publicGames = append(publicGames, publicGame)
 	}

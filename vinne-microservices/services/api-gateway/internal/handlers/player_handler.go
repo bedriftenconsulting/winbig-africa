@@ -14,6 +14,8 @@ import (
 	"github.com/randco/randco-microservices/services/api-gateway/internal/grpc"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/router"
 	"github.com/randco/randco-microservices/shared/common/logger"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -37,6 +39,13 @@ func (h *PlayerHandler) RegisterPlayer(w http.ResponseWriter, r *http.Request) e
 		Channel          string `json:"channel"`
 		TermsAccepted    bool   `json:"terms_accepted"`
 		MarketingConsent bool   `json:"marketing_consent"`
+		// Optional profile fields
+		FirstName        string `json:"first_name"`
+		LastName         string `json:"last_name"`
+		Email            string `json:"email"`
+		DateOfBirth      string `json:"date_of_birth"`
+		NationalID       string `json:"national_id"`
+		MobileMoneyPhone string `json:"mobile_money_phone"`
 		DeviceInfo       struct {
 			DeviceType string `json:"device_type"`
 			OS         string `json:"os"`
@@ -47,6 +56,7 @@ func (h *PlayerHandler) RegisterPlayer(w http.ResponseWriter, r *http.Request) e
 	}
 
 	if err := router.ReadJSON(r, &req); err != nil {
+		h.log.Error("Failed to parse JSON request", "error", err)
 		return router.ErrorResponse(w, http.StatusBadRequest, "Invalid request body")
 	}
 
@@ -75,6 +85,11 @@ func (h *PlayerHandler) RegisterPlayer(w http.ResponseWriter, r *http.Request) e
 		Channel:          req.Channel,
 		TermsAccepted:    req.TermsAccepted,
 		MarketingConsent: req.MarketingConsent,
+		FirstName:        req.FirstName,
+		LastName:         req.LastName,
+		Email:            req.Email,
+		NationalId:       req.NationalID,
+		MobileMoneyPhone: req.MobileMoneyPhone,
 		DeviceInfo: &playerv1.DeviceInfo{
 			DeviceType: req.DeviceInfo.DeviceType,
 			Os:         req.DeviceInfo.OS,
@@ -85,10 +100,17 @@ func (h *PlayerHandler) RegisterPlayer(w http.ResponseWriter, r *http.Request) e
 		},
 	}
 
+	// Parse date of birth if provided
+	if req.DateOfBirth != "" {
+		if dateOfBirth, err := time.Parse(time.RFC3339, req.DateOfBirth); err == nil {
+			grpcReq.DateOfBirth = timestamppb.New(dateOfBirth)
+		}
+	}
+
 	resp, err := client.RegisterPlayer(ctx, grpcReq)
 	if err != nil {
 		h.log.Error("Player registration failed", "error", err)
-		return router.ErrorResponse(w, http.StatusBadRequest, "Registration failed")
+		return playerGRPCError(w, err)
 	}
 
 	return router.WriteJSON(w, http.StatusOK, map[string]any{
@@ -195,7 +217,7 @@ func (h *PlayerHandler) Login(w http.ResponseWriter, r *http.Request) error {
 	resp, err := client.Login(ctx, grpcReq)
 	if err != nil {
 		h.log.Error("Player login failed", "error", err)
-		return router.ErrorResponse(w, http.StatusUnauthorized, "Invalid credentials")
+		return playerGRPCError(w, err)
 	}
 
 	return router.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1317,4 +1339,26 @@ func (h *PlayerHandler) ResendPasswordResetOTP(w http.ResponseWriter, r *http.Re
 	return router.WriteJSON(w, http.StatusOK, map[string]any{
 		"message": "OTP resent successfully",
 	})
+}
+
+// playerGRPCError maps gRPC status codes from the player service to HTTP responses.
+func playerGRPCError(w http.ResponseWriter, err error) error {
+	st, ok := grpcstatus.FromError(err)
+	if !ok {
+		return router.ErrorResponse(w, http.StatusInternalServerError, "Internal server error")
+	}
+	switch st.Code() {
+	case grpccodes.AlreadyExists:
+		return router.ErrorResponse(w, http.StatusConflict, st.Message())
+	case grpccodes.Unauthenticated:
+		return router.ErrorResponse(w, http.StatusUnauthorized, st.Message())
+	case grpccodes.NotFound:
+		return router.ErrorResponse(w, http.StatusNotFound, st.Message())
+	case grpccodes.InvalidArgument:
+		return router.ErrorResponse(w, http.StatusBadRequest, st.Message())
+	case grpccodes.PermissionDenied:
+		return router.ErrorResponse(w, http.StatusForbidden, st.Message())
+	default:
+		return router.ErrorResponse(w, http.StatusInternalServerError, "Internal server error")
+	}
 }

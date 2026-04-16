@@ -44,12 +44,10 @@ function App() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <img
-            src="/spiel_logo.png"
-            alt="Spiel"
-            className="h-16 w-16 mx-auto mb-4 animate-pulse"
-          />
-          <p className="text-gray-600">Validating authentication...</p>
+          <div className="h-16 w-16 mx-auto mb-4 rounded-xl bg-primary flex items-center justify-center animate-pulse">
+            <span className="text-2xl font-bold text-primary-foreground">WB</span>
+          </div>
+          <p className="text-muted-foreground">Validating authentication...</p>
         </div>
       </div>
     )

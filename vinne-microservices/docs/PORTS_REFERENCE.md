@@ -14,17 +14,17 @@ This document provides a comprehensive reference for all service ports and datab
 
 | Service          | Port  | Description                                |
 | ---------------- | ----- | ------------------------------------------ |
-| Admin Management | 50057 | Admin authentication and user management   |
-| Agent Auth       | 50052 | Agent authentication service               |
-| Agent Management | 50058 | Agent registration and management          |
-| Game             | 50053 | Game configuration and management          |
-| Terminal         | 50054 | Terminal device management                 |
-| Wallet           | 50059 | Wallet and transaction management          |
-| Draw             | 50060 | Draw execution and results                 |
-| Payment          | 50061 | Payment processing and gateway integration |
-| Ticket           | 50062 | Player Ticker management                   |
-| Notification     | 50063 | Multi-channel communication delivery       |
-| Player           | 50064 | Player authentication and management       |
+| Admin Management | 51057 | Admin authentication and user management   |
+| Agent Auth       | 51052 | Agent authentication service               |
+| Agent Management | 51058 | Agent registration and management          |
+| Game             | 51053 | Game configuration and management          |
+| Terminal         | 51054 | Terminal device management                 |
+| Wallet           | 51059 | Wallet and transaction management          |
+| Draw             | 51060 | Draw execution and results                 |
+| Payment          | 51061 | Payment processing and gateway integration |
+| Ticket           | 51062 | Player Ticker management                   |
+| Notification     | 51063 | Multi-channel communication delivery       |
+| Player           | 51064 | Player authentication and management       |
 
 ## Database Ports
 
@@ -70,18 +70,18 @@ This document provides a comprehensive reference for all service ports and datab
 ### Service Ports
 
 - **4000**: API Gateway (HTTP)
-- **50050-50099**: gRPC services range
-  - 50052: Agent Auth
-  - 50053: Game
-  - 50054: Terminal
-  - 50057: Admin Management
-  - 50058: Agent Management
-  - 50059: Wallet
-  - 50060: Draw
-  - 50061: Payment
-  - 50062: Ticket
-  - 50063: Notification
-  - 50064: Player
+- **51050-51099**: gRPC services range
+  - 51052: Agent Auth
+  - 51053: Game
+  - 51054: Terminal
+  - 51057: Admin Management
+  - 51058: Agent Management
+  - 51059: Wallet
+  - 51060: Draw
+  - 51061: Payment
+  - 51062: Ticket
+  - 51063: Notification
+  - 51064: Player
 
 ### Database Ports
 - **5434-5442**: PostgreSQL instances (one per service)
@@ -101,11 +101,19 @@ This document provides a comprehensive reference for all service ports and datab
 
 4. **Port Conflicts**: Ensure no two services share the same port. Each service has a unique port assignment.
 
-5. **Recent Port Changes** (2025-10-08):
-   - Terminal: 50056 → 50054 (resolved conflict with Draw)
-   - Draw: 50056 → 50060 (resolved conflict with Terminal)
-   - Wallet: 50053 → 50059 (resolved conflict with Game)
-   - Game: Confirmed at 50053 (API Gateway corrected from 50055)
+5. **Recent Port Changes** (2026-04-14):
+   - All gRPC services migrated from 500xx → 510xx range to avoid Windows/Hyper-V reserved port conflicts (50000–50159)
+   - Agent Auth: 50052 → 51052
+   - Game: 50053 → 51053
+   - Terminal: 50054 → 51054
+   - Admin Management: 50057 → 51057
+   - Agent Management: 50058 → 51058
+   - Wallet: 50059 → 51059
+   - Draw: 50060 → 51060
+   - Payment: 50061 → 51061
+   - Ticket: 50062 → 51062
+   - Notification: 50063 → 51063
+   - Player: 50064 → 51064
 
 ## Quick Reference Commands
 
@@ -139,4 +147,4 @@ Port configurations are maintained in:
 - `scripts/start-services.sh` - Development startup script
 - `scripts/generate-argocd-apps.sh` - ArgoCD application generation
 
-Last Updated: 2025-10-08
+Last Updated: 2026-04-14

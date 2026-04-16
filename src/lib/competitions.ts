@@ -15,6 +15,7 @@ export interface Competition {
   tag: "LIVE" | "Ending Soon" | "Coming Soon" | "Sold Out";
   featured?: boolean;
   description?: string;
+  maxTicketsPerPlayer?: number;
 }
 
 export const competitions: Competition[] = [

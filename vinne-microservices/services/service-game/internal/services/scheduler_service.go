@@ -308,6 +308,7 @@ func (s *SchedulerService) handleDrawTime(ctx context.Context, schedule *models.
 	}
 
 	// Create draw record in Draw Service via gRPC
+	// The draw service is idempotent - if a draw already exists for this schedule, it returns the existing one
 	drawID, err := s.createDrawRecord(ctx, game, schedule)
 	if err != nil {
 		span.RecordError(err)

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS player_wallets (
     pending_balance BIGINT NOT NULL DEFAULT 0,
     available_balance BIGINT NOT NULL DEFAULT 0,
     currency VARCHAR(3) NOT NULL DEFAULT 'GHS',
-    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     last_transaction_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
     updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,

@@ -67,8 +67,9 @@ func (r *gameRepository) CreateWithTx(ctx context.Context, tx *sql.Tx, game *mod
 			draw_days, draw_time, weekly_schedule, status, description,
 			start_time, end_time, version, start_time_str, end_time_str, draw_time_str,
 			number_range_min, number_range_max, selection_count, sales_cutoff_minutes,
-			base_price, multi_draw_enabled, max_draws_advance, logo_url, brand_color)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+			base_price, multi_draw_enabled, max_draws_advance, logo_url, brand_color,
+			prize_details, rules, total_tickets, start_date, end_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37)
 		RETURNING created_at, updated_at`
 
 	game.ID = uuid.New()
@@ -98,6 +99,7 @@ func (r *gameRepository) CreateWithTx(ctx context.Context, tx *sql.Tx, game *mod
 			game.EndTime, game.Version, game.StartTimeStr, game.EndTimeStr, game.DrawTimeStr,
 			game.NumberRangeMin, game.NumberRangeMax, game.SelectionCount, game.SalesCutoffMinutes,
 			game.BasePrice, game.MultiDrawEnabled, game.MaxDrawsAdvance, game.LogoURL, game.BrandColor,
+			game.PrizeDetails, game.Rules, game.TotalTickets, game.StartDate, game.EndDate,
 		)
 	} else {
 		row = r.db.QueryRowContext(ctx, query,
@@ -108,6 +110,7 @@ func (r *gameRepository) CreateWithTx(ctx context.Context, tx *sql.Tx, game *mod
 			game.EndTime, game.Version, game.StartTimeStr, game.EndTimeStr, game.DrawTimeStr,
 			game.NumberRangeMin, game.NumberRangeMax, game.SelectionCount, game.SalesCutoffMinutes,
 			game.BasePrice, game.MultiDrawEnabled, game.MaxDrawsAdvance, game.LogoURL, game.BrandColor,
+			game.PrizeDetails, game.Rules, game.TotalTickets, game.StartDate, game.EndDate,
 		)
 	}
 
@@ -144,6 +147,7 @@ func (r *gameRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Gam
 			number_range_min, number_range_max, selection_count,
 			base_price, multi_draw_enabled, max_draws_advance,
 			logo_url, brand_color,
+			prize_details, rules, total_tickets, start_date, end_date,
 			created_at, updated_at
 		FROM games
 		WHERE id = $1`
@@ -160,6 +164,7 @@ func (r *gameRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Gam
 		&game.NumberRangeMin, &game.NumberRangeMax, &game.SelectionCount,
 		&game.BasePrice, &game.MultiDrawEnabled, &game.MaxDrawsAdvance,
 		&game.LogoURL, &game.BrandColor,
+		&game.PrizeDetails, &game.Rules, &game.TotalTickets, &game.StartDate, &game.EndDate,
 		&game.CreatedAt, &game.UpdatedAt,
 	)
 
@@ -409,6 +414,7 @@ func (r *gameRepository) List(ctx context.Context, filter models.GameFilter, pag
 			number_range_min, number_range_max, selection_count,
 			base_price, multi_draw_enabled, max_draws_advance,
 			logo_url, brand_color,
+			prize_details, rules, total_tickets, start_date, end_date,
 			created_at, updated_at
 		FROM games %s
 		ORDER BY created_at DESC
@@ -438,6 +444,7 @@ func (r *gameRepository) List(ctx context.Context, filter models.GameFilter, pag
 			&game.NumberRangeMin, &game.NumberRangeMax, &game.SelectionCount,
 			&game.BasePrice, &game.MultiDrawEnabled, &game.MaxDrawsAdvance,
 			&game.LogoURL, &game.BrandColor,
+			&game.PrizeDetails, &game.Rules, &game.TotalTickets, &game.StartDate, &game.EndDate,
 			&game.CreatedAt, &game.UpdatedAt,
 		)
 		if err != nil {

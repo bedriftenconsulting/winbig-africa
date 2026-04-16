@@ -296,9 +296,11 @@ func (s *spacesStorage) GetURL(ctx context.Context, key string, expires time.Dur
 }
 
 func (s *spacesStorage) getObjectURL(key string) string {
-	// Use the endpoint directly from config
-	// Format: https://{bucket}.{endpoint}/{key}
-	// Example: https://rand-dev-static.lon1.digitaloceanspaces.com/games/...
+	// For path-style (MinIO/local), use endpoint/bucket/key
+	// For virtual-hosted style (DigitalOcean Spaces), use bucket.endpoint/key
+	if strings.Contains(s.endpoint, "localhost") || strings.Contains(s.endpoint, "minio") || strings.Contains(s.endpoint, "127.0.0.1") {
+		return fmt.Sprintf("%s/%s/%s", strings.TrimRight(s.endpoint, "/"), s.bucket, key)
+	}
 	return fmt.Sprintf("https://%s.%s/%s", s.bucket, strings.TrimPrefix(s.endpoint, "https://"), key)
 }
 

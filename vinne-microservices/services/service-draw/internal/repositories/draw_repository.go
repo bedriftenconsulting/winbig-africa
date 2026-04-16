@@ -18,6 +18,7 @@ type DrawRepository interface {
 	// Draw operations
 	Create(ctx context.Context, draw *models.Draw) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Draw, error)
+	GetByGameScheduleID(ctx context.Context, gameScheduleID uuid.UUID) (*models.Draw, error)
 	Update(ctx context.Context, draw *models.Draw) error
 	List(ctx context.Context, gameID *uuid.UUID, status *models.DrawStatus, startDate, endDate *time.Time, page, perPage int) ([]*models.Draw, int64, error)
 	ListCompletedPublic(ctx context.Context, gameID *uuid.UUID, gameCode string, latestOnly bool, startDate, endDate *time.Time, page, perPage int) ([]*models.Draw, int64, error)
@@ -134,6 +135,34 @@ func (r *drawRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Dra
 			attribute.Int("draw.stage_data.current_stage", draw.StageData.CurrentStage),
 			attribute.String("draw.stage_data.status", string(draw.StageData.StageStatus)),
 		)
+	}
+
+	return &draw, nil
+}
+
+func (r *drawRepository) GetByGameScheduleID(ctx context.Context, gameScheduleID uuid.UUID) (*models.Draw, error) {
+	tracer := otel.Tracer("draw-service")
+	ctx, span := tracer.Start(ctx, "DrawRepository.GetByGameScheduleID")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("game_schedule_id", gameScheduleID.String()))
+
+	query := `
+		SELECT id, game_id, draw_number, game_name, COALESCE(game_code, '') as game_code, game_schedule_id, draw_name, status, scheduled_time, executed_time, winning_numbers, machine_numbers,
+		       nla_draw_reference, draw_location, nla_official_signature, total_tickets_sold, total_prize_pool,
+		       verification_hash, stage_data, created_at, updated_at
+		FROM draws
+		WHERE game_schedule_id = $1
+		ORDER BY created_at DESC
+		LIMIT 1`
+
+	var draw models.Draw
+	err := r.db.GetContext(ctx, &draw, query, gameScheduleID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // not found is not an error
+		}
+		return nil, fmt.Errorf("failed to get draw by schedule ID: %w", err)
 	}
 
 	return &draw, nil

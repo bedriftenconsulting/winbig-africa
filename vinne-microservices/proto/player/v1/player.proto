@@ -56,6 +56,13 @@ message RegisterPlayerRequest {
   DeviceInfo device_info = 5;
   bool terms_accepted = 6;
   bool marketing_consent = 7;
+  // Optional profile fields
+  string first_name = 8;
+  string last_name = 9;
+  string email = 10;
+  google.protobuf.Timestamp date_of_birth = 11;
+  string national_id = 12;
+  string mobile_money_phone = 13;
 }
 
 message USSDRegisterRequest {

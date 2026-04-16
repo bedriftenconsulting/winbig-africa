@@ -41,6 +41,7 @@ import {
   Send,
   CheckCircle,
   XCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { gameService, type Game } from '@/services/games'
 import { formatInGhanaTime } from '@/lib/date-utils'
@@ -74,9 +75,12 @@ export function GameList({
 
   const queryClient = useQueryClient()
 
-  const { data: gamesData, isLoading } = useQuery({
-    queryKey: ['games'],
-    queryFn: () => gameService.getGames(),
+  const { data: gamesData, isLoading, refetch } = useQuery({
+    queryKey: ['games-list'],
+    queryFn: () => gameService.getGames(1, 500),
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   })
 
   const games = (gamesData?.data as Game[]) || []
@@ -90,7 +94,7 @@ export function GameList({
     const matchesStatus =
       statusFilter === 'all' || game.status.toLowerCase() === statusFilter.toLowerCase()
 
-    const gameType = game.game_type || game.type || 'unknown'
+    const gameType = game.game_format || game.game_category || 'unknown'
     const matchesType = typeFilter === 'all' || gameType === typeFilter
 
     return matchesSearch && matchesStatus && matchesType
@@ -122,20 +126,16 @@ export function GameList({
   const getGameTypeLabel = (type: string) => {
     const typeMap: { [key: string]: string } = {
       national: 'National',
-      private: 'Private',
+      private: 'Competition',
       special: 'Special',
+      competition: 'Competition',
+      raffle: 'Raffle',
       '5_by_90': '5/90',
       direct: 'Direct',
       perm: 'Perm',
       banker: 'Banker',
-      super_6: 'Super 6',
-      midweek: 'Midweek',
-      aseda: 'Aseda',
-      bonanza: 'Bonanza',
-      noon_rush: 'Noon Rush',
-      evening: 'Evening',
     }
-    return typeMap[type] || type
+    return typeMap[type?.toLowerCase()] || 'Competition'
   }
 
   // Mutations for approval workflow
@@ -144,6 +144,7 @@ export function GameList({
       gameService.submitForApproval(gameId, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
       toast({
         title: 'Success',
         description: 'Game submitted for approval',
@@ -163,6 +164,7 @@ export function GameList({
       gameService.approveGame(gameId, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
       toast({
         title: 'Success',
         description: 'Game approved successfully',
@@ -182,6 +184,7 @@ export function GameList({
       gameService.rejectGame(gameId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
       toast({
         title: 'Success',
         description: 'Game rejected',
@@ -234,10 +237,15 @@ export function GameList({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Game Management</CardTitle>
-          <Button onClick={onCreateGame} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Create New Game
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={() => refetch()} title="Refresh">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button onClick={onCreateGame} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create New Game
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -270,11 +278,10 @@ export function GameList({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="national">National</SelectItem>
+              <SelectItem value="competition">Competition</SelectItem>
               <SelectItem value="private">Private</SelectItem>
-              <SelectItem value="5_by_90">5/90</SelectItem>
-              <SelectItem value="direct">Direct</SelectItem>
-              <SelectItem value="perm">Perm</SelectItem>
+              <SelectItem value="national">National</SelectItem>
+              <SelectItem value="special">Special</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -322,7 +329,7 @@ export function GameList({
                     <TableCell>{game.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {getGameTypeLabel(game.game_type || game.type || 'unknown')}
+                        {getGameTypeLabel(game.game_format || game.game_category || 'competition')}
                       </Badge>
                     </TableCell>
                     <TableCell>₵{(game.base_price || game.ticket_price || 0).toFixed(2)}</TableCell>
@@ -331,7 +338,7 @@ export function GameList({
                     </TableCell>
                     <TableCell>{getStatusBadge(game.status)}</TableCell>
                     <TableCell>
-                      {formatInGhanaTime(new Date(game.created_at), 'MMM dd, yyyy')}
+                      {formatInGhanaTime(game.created_at, 'MMM dd, yyyy')}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-2">
@@ -350,14 +357,6 @@ export function GameList({
                           title="Edit Game"
                         >
                           <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onManageSchedule(game)}
-                          title="Manage Schedule"
-                        >
-                          <Calendar className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"

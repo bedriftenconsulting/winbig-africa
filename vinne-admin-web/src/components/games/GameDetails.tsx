@@ -179,13 +179,13 @@ export function GameDetails({
                     <div>
                       <p className="text-sm text-muted-foreground">Created Date</p>
                       <p className="font-medium">
-                        {formatInGhanaTime(new Date(game.created_at), 'PPP')}
+                        {formatInGhanaTime(game.created_at, 'PPP')}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Last Updated</p>
                       <p className="font-medium">
-                        {formatInGhanaTime(new Date(game.updated_at), 'PPP')}
+                        {formatInGhanaTime(game.updated_at, 'PPP')}
                       </p>
                     </div>
                   </div>

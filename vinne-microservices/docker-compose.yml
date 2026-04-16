@@ -28,6 +28,7 @@ volumes:
   redis-notification-data:
   redis-shared-data:
   kafka-data:
+  minio-data:
   jaeger-data:
   prometheus-data:
   grafana-data:
@@ -107,6 +108,42 @@ services:
     networks:
       - randco-net
 
+  # MinIO - local S3-compatible object storage for game logos
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - randco-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MinIO bucket initializer - creates the bucket on first run
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/vinne-game-assets;
+      mc anonymous set public local/vinne-game-assets;
+      echo 'MinIO bucket ready';
+      "
+    networks:
+      - randco-net
+
   # API Gateway
   api-gateway:
     build:
@@ -118,34 +155,44 @@ services:
       SERVER_PORT: 4000
       ENVIRONMENT: development
       SERVICES_ADMIN_MANAGEMENT_HOST: service-admin-management
-      SERVICES_ADMIN_MANAGEMENT_PORT: 50057
+      SERVICES_ADMIN_MANAGEMENT_PORT: 51057
       SERVICES_AGENT_AUTH_HOST: service-agent-auth
-      SERVICES_AGENT_AUTH_PORT: 50052
+      SERVICES_AGENT_AUTH_PORT: 51052
       SERVICES_AGENT_MANAGEMENT_HOST: service-agent-management
-      SERVICES_AGENT_MANAGEMENT_PORT: 50056
+      SERVICES_AGENT_MANAGEMENT_PORT: 51056
       SERVICES_WALLET_HOST: service-wallet
-      SERVICES_WALLET_PORT: 50059
+      SERVICES_WALLET_PORT: 51059
       SERVICES_TERMINAL_HOST: service-terminal
-      SERVICES_TERMINAL_PORT: 50054
+      SERVICES_TERMINAL_PORT: 51054
       SERVICES_PAYMENT_HOST: service-payment
-      SERVICES_PAYMENT_PORT: 50061
+      SERVICES_PAYMENT_PORT: 51061
       SERVICES_GAME_HOST: service-game
-      SERVICES_GAME_PORT: 50053
+      SERVICES_GAME_PORT: 51053
       SERVICES_DRAW_HOST: service-draw
-      SERVICES_DRAW_PORT: 50060
+      SERVICES_DRAW_PORT: 51060
       SERVICES_TICKET_HOST: service-ticket
-      SERVICES_TICKET_PORT: 50062
+      SERVICES_TICKET_PORT: 51062
       SERVICES_NOTIFICATION_HOST: service-notification
-      SERVICES_NOTIFICATION_PORT: 50063
+      SERVICES_NOTIFICATION_PORT: 51063
       SERVICES_PLAYER_HOST: service-player
-      SERVICES_PLAYER_PORT: 50064
+      SERVICES_PLAYER_PORT: 51064
       REDIS_HOST: redis-shared
       REDIS_PORT: 6379
       SHARED_REDIS_HOST: redis-shared
       SHARED_REDIS_PORT: 6379
+      SECURITY_ALLOWED_ORIGINS: "http://localhost:8080,http://localhost:8081,http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:6176,http://localhost:6177,http://localhost:6178,http://localhost:9000"
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      # Storage (MinIO for local dev)
+      STORAGE_PROVIDER: spaces
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_REGION: us-east-1
+      STORAGE_BUCKET: vinne-game-assets
+      STORAGE_ACCESS_KEY_ID: minioadmin
+      STORAGE_SECRET_ACCESS_KEY: minioadmin
+      STORAGE_CDN_ENDPOINT: http://localhost:9000/vinne-game-assets
+      STORAGE_FORCE_PATH_STYLE: "true"
     networks:
       - randco-net
     depends_on:
@@ -157,6 +204,7 @@ services:
       - service-payment
       - redis-shared
       - jaeger
+      - minio
 
   # Admin Management Service Database & Cache (includes auth functionality)
   service-admin-management-db:
@@ -189,7 +237,7 @@ services:
       dockerfile: ./services/service-admin-management/Dockerfile.dev
     ports:
       - "8085:8080"  # HTTP port for metrics/health
-      - "50057:50057"  # gRPC port
+      - "51057:51057"  # gRPC port
     environment:
       SERVICE_NAME: service-admin-management
       DATABASE_HOST: service-admin-management-db
@@ -203,7 +251,7 @@ services:
       SHARED_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       TRACING_JAEGER_ENDPOINT: http://jaeger:14268/api/traces
-      SERVER_PORT: 50057
+      SERVER_PORT: 51057
       METRICS_PORT: 9092
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       DATABASE_URL: postgresql://admin_mgmt:admin_mgmt123@service-admin-management-db:5432/admin_management?sslmode=disable
@@ -250,10 +298,10 @@ services:
       context: .
       dockerfile: ./services/service-agent-auth/Dockerfile.dev
     ports:
-      - "50052:50052"
+      - "51052:51052"
     environment:
       SERVICE_NAME: service-agent-auth
-      SERVER_PORT: 50052
+      SERVER_PORT: 51052
       DATABASE_HOST: service-agent-auth-db
       DATABASE_PORT: 5432
       DATABASE_USER: agent
@@ -307,7 +355,7 @@ services:
       dockerfile: ./services/service-agent-management/Dockerfile.dev
     ports:
       - "8086:8080"  # HTTP port for metrics/health
-      - "50056:50056"  # gRPC port
+      - "51056:51056"  # gRPC port
     environment:
       SERVICE_NAME: service-agent-management
       DATABASE_HOST: service-agent-management-db
@@ -321,12 +369,12 @@ services:
       SHARED_REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092
       TRACING_JAEGER_ENDPOINT: http://jaeger:14268/api/traces
-      SERVER_PORT: 50056
+      SERVER_PORT: 51056
       METRICS_PORT: 8080
-      SERVICES_AGENT_AUTH_SERVICE: service-agent-auth:50052
-      SERVICES_WALLET_SERVICE: service-wallet:50059
-      SERVICES_COMMISSION_SERVICE: service-commission:50062
-      SERVICES_NOTIFICATION_SERVICE: service-notification:50063
+      SERVICES_AGENT_AUTH_SERVICE: service-agent-auth:51052
+      SERVICES_WALLET_SERVICE: service-wallet:51059
+      SERVICES_COMMISSION_SERVICE: service-commission:51062
+      SERVICES_NOTIFICATION_SERVICE: service-notification:51063
       DATABASE_URL: postgresql://agent_mgmt:agent_mgmt123@service-agent-management-db:5432/agent_management?sslmode=disable
     networks:
       - randco-net
@@ -368,7 +416,7 @@ services:
       dockerfile: ./services/service-wallet/Dockerfile.dev
     ports:
       - "8087:8080"  # HTTP port for metrics/health
-      - "50059:50059"  # gRPC port
+      - "51059:51059"  # gRPC port
     environment:
       SERVICE_NAME: service-wallet
       DATABASE_HOST: service-wallet-db
@@ -385,7 +433,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
-      SERVER_PORT: 50059
+      SERVER_PORT: 51059
       METRICS_PORT: 8080
     networks:
       - randco-net
@@ -427,7 +475,7 @@ services:
       dockerfile: ./services/service-terminal/Dockerfile.dev
     ports:
       - "8088:8080"  # HTTP port for metrics/health
-      - "50054:50054"  # gRPC port
+      - "51054:51054"  # gRPC port
     environment:
       SERVICE_NAME: service-terminal
       DATABASE_HOST: service-terminal-db
@@ -444,7 +492,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
-      SERVER_PORT: 50054
+      SERVER_PORT: 51054
       METRICS_PORT: 8080
     networks:
       - randco-net
@@ -486,7 +534,7 @@ services:
       dockerfile: ./services/service-payment/Dockerfile.dev
     ports:
       - "8089:8080"  # HTTP port for metrics/health
-      - "50061:50061"  # gRPC port
+      - "51061:51061"  # gRPC port
     environment:
       SERVICE_NAME: service-payment
       DATABASE_HOST: service-payment-db
@@ -503,7 +551,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
-      SERVER_PORT: 50061
+      SERVER_PORT: 51061
       METRICS_PORT: 8080
       PAYMENT_TEST_MODE: true
       PAYMENT_DEFAULT_CURRENCY: GHS
@@ -553,11 +601,11 @@ services:
       dockerfile: ./services/service-game/Dockerfile.dev
     ports:
       - "8090:8080"
-      - "50053:50053"
+      - "51053:51053"
     environment:
       SERVICE_NAME: service-game
       ENVIRONMENT: local
-      SERVER_PORT: 50053
+      SERVER_PORT: 51053
       METRICS_PORT: 8080
       DATABASE_URL: postgresql://game:game123@service-game-db:5432/game_service?sslmode=disable
       DATABASE_HOST: service-game-db
@@ -578,7 +626,7 @@ services:
       SCHEDULER_WINDOW_MINUTES: 2
       SCHEDULER_TIMEZONE: UTC
       SERVICES_DRAW_HOST: service-draw
-      SERVICES_DRAW_PORT: 50060
+      SERVICES_DRAW_PORT: 51060
     networks:
       - randco-net
     depends_on:
@@ -619,11 +667,11 @@ services:
       dockerfile: ./services/service-draw/Dockerfile.dev
     ports:
       - "8091:8080"
-      - "50060:50060"
+      - "51060:51060"
     environment:
       SERVICE_NAME: service-draw
       ENVIRONMENT: local
-      SERVER_PORT: 50060
+      SERVER_PORT: 51060
       METRICS_PORT: 8080
       DATABASE_URL: postgresql://draw_service:draw_service123@service-draw-db:5432/draw_service?sslmode=disable
       DATABASE_HOST: service-draw-db
@@ -641,7 +689,9 @@ services:
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
       VALIDATION_NLA_API_ENDPOINT: http://localhost:18080/mock-nla
       VALIDATION_VALIDATION_TIMEOUT: 30s
-      GAME_SERVICE_URL: service-game:50053
+      GAME_SERVICE_URL: service-game:51053
+      SERVICES_TICKET_HOST: service-ticket
+      SERVICES_TICKET_PORT: "51062"
     networks:
       - randco-net
     depends_on:
@@ -682,10 +732,10 @@ services:
       dockerfile: ./services/service-ticket/Dockerfile.dev
     ports:
       - "8092:8080"
-      - "50062:50062"
+      - "51062:51062"
     environment:
       SERVICE_NAME: service-ticket
-      SERVER_PORT: 50062
+      SERVER_PORT: 51062
       METRICS_PORT: 8080
       DATABASE_URL: postgresql://ticket:ticket123@service-ticket-db:5432/ticket_service?sslmode=disable
       DATABASE_HOST: service-ticket-db
@@ -702,17 +752,17 @@ services:
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
       SERVICES_GAME_HOST: service-game
-      SERVICES_GAME_PORT: 50053
+      SERVICES_GAME_PORT: 51053
       SERVICES_DRAW_HOST: service-draw
-      SERVICES_DRAW_PORT: 50060
+      SERVICES_DRAW_PORT: 51060
       SERVICES_PAYMENT_HOST: service-payment
-      SERVICES_PAYMENT_PORT: 50061
+      SERVICES_PAYMENT_PORT: 51061
       SERVICES_WALLET_HOST: service-wallet
-      SERVICES_WALLET_PORT: 50059
-      GAME_SERVICE_URL: service-game:50053
-      DRAW_SERVICE_URL: service-draw:50060
-      PAYMENT_SERVICE_URL: service-payment:50061
-      WALLET_SERVICE_URL: service-wallet:50059
+      SERVICES_WALLET_PORT: 51059
+      GAME_SERVICE_URL: service-game:51053
+      DRAW_SERVICE_URL: service-draw:51060
+      PAYMENT_SERVICE_URL: service-payment:51061
+      WALLET_SERVICE_URL: service-wallet:51059
     networks:
       - randco-net
     depends_on:
@@ -753,10 +803,10 @@ services:
       dockerfile: ./services/service-notification/Dockerfile.dev
     ports:
       - "8093:8080"
-      - "50063:50063"
+      - "51063:51063"
     environment:
       SERVICE_NAME: service-notification
-      SERVER_PORT: 50063
+      SERVER_PORT: 51063
       METRICS_PORT: 8080
       DATABASE_URL: postgresql://notification:notification123@service-notification-db:5432/notification?sslmode=disable
       DATABASE_HOST: service-notification-db
@@ -812,10 +862,10 @@ services:
       dockerfile: ./services/service-player/Dockerfile.dev
     ports:
       - "8094:8080"
-      - "50064:50064"
+      - "51064:51064"
     environment:
       SERVICE_NAME: service-player
-      SERVER_PORT: 50064
+      SERVER_PORT: 51064
       METRICS_PORT: 8080
       DATABASE_URL: postgresql://player:player123@service-player-db:5432/player_service?sslmode=disable
       DATABASE_HOST: service-player-db
@@ -831,9 +881,9 @@ services:
       KAFKA_BROKERS: kafka:29092
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
-      SERVICES_NOTIFICATION_SERVICE: service-notification:50063
-      SERVICES_WALLET_SERVICE: service-wallet:50059
-      SERVICES_PAYMENT_SERVICE: service-payment:50061
+      SERVICES_NOTIFICATION_SERVICE: service-notification:51063
+      SERVICES_WALLET_SERVICE: service-wallet:51059
+      SERVICES_PAYMENT_SERVICE: service-payment:51061
       SECURITY_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       SECURITY_JWT_ISSUER: spiel-platform
       SECURITY_ACCESS_TOKEN_EXPIRY: 24h
@@ -871,3 +921,4 @@ services:
   #     - service-game-redis
   #     - kafka
   #     - jaeger
+

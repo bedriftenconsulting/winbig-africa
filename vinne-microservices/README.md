@@ -27,17 +27,17 @@ This platform follows a microservices architecture with:
 | Service | gRPC Port | Description |
 |---------|-----------|-------------|
 | API Gateway | 4000 (HTTP) | REST API entry point |
-| Admin Management | 50057 | Admin authentication, user management, RBAC |
-| Agent Auth | 50052 | Agent authentication and device management |
-| Agent Management | 50058 | Agent registration, KYC, retailer management |
-| Game | 50053 | Game configuration and prize structures |
-| Terminal | 50054 | POS terminal management and monitoring |
-| Wallet | 50059 | Agent/retailer wallet and transactions |
-| Draw | 50060 | Draw execution and RNG management |
-| Payment | 50061 | Payment gateway integration (MTN, Telecel, AirtelTigo) |
-| Ticket | 50062 | Ticket generation and validation |
-| Notification | 50063 | Multi-channel messaging (SMS, Email, Push) |
-| Player | 50064 | Player authentication and management |
+| Admin Management | 51057 | Admin authentication, user management, RBAC |
+| Agent Auth | 51052 | Agent authentication and device management |
+| Agent Management | 51058 | Agent registration, KYC, retailer management |
+| Game | 51053 | Game configuration and prize structures |
+| Terminal | 51054 | POS terminal management and monitoring |
+| Wallet | 51059 | Agent/retailer wallet and transactions |
+| Draw | 51060 | Draw execution and RNG management |
+| Payment | 51061 | Payment gateway integration (MTN, Telecel, AirtelTigo) |
+| Ticket | 51062 | Ticket generation and validation |
+| Notification | 51063 | Multi-channel messaging (SMS, Email, Push) |
+| Player | 51064 | Player authentication and management |
 
 ## Project Structure
 
@@ -127,7 +127,7 @@ Each service uses Viper-based configuration. Key environment variables:
 
 ```bash
 # Server
-SERVER_PORT=50057
+SERVER_PORT=51057
 SERVER_HOST=0.0.0.0
 
 # Database
@@ -183,3 +183,4 @@ go test ./...
 ## License
 
 Private - Rand Lottery Ltd
+

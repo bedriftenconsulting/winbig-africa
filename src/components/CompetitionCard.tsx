@@ -6,7 +6,9 @@ import type { Competition } from "@/lib/competitions";
 
 const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: number }) => {
   const { hours, minutes, seconds } = useCountdown(comp.endsAt);
-  const pct = Math.round((comp.soldTickets / comp.totalTickets) * 100);
+  const pct = comp.totalTickets > 0
+    ? Math.round((comp.soldTickets / comp.totalTickets) * 100)
+    : 0;
 
   const timeLabel = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
@@ -21,16 +23,24 @@ const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: numbe
         to={`/competitions/${comp.id}`}
         className="group block card-light rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-shadow border border-black/8"
       >
-        <div className="relative aspect-[4/3] overflow-hidden">
-          <img
-            src={comp.image}
-            alt={comp.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            loading="lazy"
-            width={800}
-            height={600}
-          />
-          {/* Badge — orange pill, matches reference */}
+        {/* Image */}
+        <div className="relative aspect-[4/3] overflow-hidden bg-[hsl(0_0%_14%)]">
+          {comp.image ? (
+            <img
+              src={comp.image}
+              alt={comp.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              loading="lazy"
+              width={800}
+              height={600}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="text-5xl opacity-20">🏆</span>
+            </div>
+          )}
+
+          {/* Badge */}
           <span className="absolute top-3 left-3 bg-[hsl(22_100%_52%)] text-white px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
             {comp.tag === "LIVE" && (
               <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse inline-block" />
@@ -43,6 +53,7 @@ const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: numbe
           </span>
         </div>
 
+        {/* Body */}
         <div className="p-4">
           <h3 className="font-heading text-base text-[hsl(0_0%_10%)] mb-3 line-clamp-2 leading-snug">
             {comp.title}
@@ -62,7 +73,6 @@ const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: numbe
             </motion.button>
           </div>
 
-          {/* Progress bar */}
           <div className="mb-2">
             <div className="h-2 bg-black/10 rounded-full overflow-hidden">
               <div

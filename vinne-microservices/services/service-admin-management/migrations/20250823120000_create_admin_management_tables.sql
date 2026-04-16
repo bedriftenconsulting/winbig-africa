@@ -193,7 +193,7 @@ INSERT INTO admin_users (
     'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a00',
     'superadmin@randco.com',
     'superadmin',
-    '$2a$10$YourHashedPasswordHere', -- This should be properly hashed
+    '$2b$10$Oowo/nx.NNXj.2fIGjbRR.DagmwrIaB.HF1CchM9LfG7OzL/dJdEG', -- bcrypt hash of Admin@123!
     'Super',
     'Admin',
     TRUE

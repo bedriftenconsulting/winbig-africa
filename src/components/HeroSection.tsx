@@ -1,7 +1,7 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useCountdown } from "@/hooks/useCountdown";
-import { competitions } from "@/lib/competitions";
+import { useGames } from "@/hooks/useGames";
 import { useRef } from "react";
 
 const SPARKLES = [
@@ -39,14 +39,40 @@ const item = {
 };
 
 const HeroSection = () => {
-  const featured = competitions.find((c) => c.featured)!;
-  const { hours, minutes, seconds } = useCountdown(featured.endsAt);
-  const ref = useRef<HTMLElement>(null);
+  const { featured, loading } = useGames();
+  const fallbackDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const { hours, minutes, seconds } = useCountdown(featured?.endsAt ?? fallbackDate);
 
+  // ALL hooks must be called before any early return
+  const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const bgY    = useTransform(scrollYProgress, [0, 1], ["0%", "25%"]);
   const textY  = useTransform(scrollYProgress, [0, 1], ["0%", "12%"]);
   const fadeOut = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
+
+  if (loading) return (
+    <section className="relative min-h-screen flex items-center bg-[hsl(0_0%_4%)] pt-16">
+      <div className="container relative z-20 py-16">
+        <div className="max-w-lg animate-pulse space-y-6">
+          <div className="h-16 bg-white/10 rounded w-3/4" />
+          <div className="h-16 bg-white/10 rounded w-full" />
+          <div className="h-12 bg-white/10 rounded w-1/2" />
+        </div>
+      </div>
+    </section>
+  );
+
+  if (!featured) return (
+    <section className="relative min-h-screen flex items-center bg-[hsl(0_0%_4%)] pt-16">
+      <div className="container relative z-20 py-16 text-center">
+        <h1 className="font-heading text-gold text-4xl mb-4">COMING SOON</h1>
+        <p className="text-white/60">New competitions are being set up. Check back soon!</p>
+        <Link to="/competitions" className="inline-block mt-6 border border-white/20 text-white/80 px-8 py-3 rounded-lg font-heading hover:border-gold/50 hover:text-gold transition">
+          VIEW ALL
+        </Link>
+      </div>
+    </section>
+  );
 
   return (
     <section

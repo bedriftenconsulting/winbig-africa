@@ -203,6 +203,14 @@ message CreateGameRequest {
   // Additional configuration
   bool weekly_schedule = 22;
   string description = 23;
+  
+  // WinBig Competition fields
+  string prize_details = 24; // Prize descriptions
+  string rules = 25; // Competition rules
+  int32 total_tickets = 26; // Total tickets available
+  string start_date = 27; // Competition start date (YYYY-MM-DD)
+  string end_date = 28; // Competition end date (YYYY-MM-DD)
+  string status = 29; // Draft, Active, Suspended
 }
 
 message CreateGameResponse {

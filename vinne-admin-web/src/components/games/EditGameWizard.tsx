@@ -3,96 +3,62 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
-import { formatInGhanaTime } from '@/lib/date-utils'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
+  Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
 } from '@/components/ui/form'
 import { Progress } from '@/components/ui/progress'
-import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Loader2,
-  Info,
-  DollarSign,
-  Calendar,
-  Settings,
-  Lock,
-  AlertCircle,
-} from 'lucide-react'
-import { gameService, type UpdateGameRequest, type Game } from '@/services/games'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ArrowLeft, ArrowRight, Check, Loader2, Info, Trophy, FileText, Calendar } from 'lucide-react'
+import { gameService, type Game } from '@/services/games'
 
-const betTypeSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  enabled: z.boolean(),
-  multiplier: z.number().min(1).max(100000000), // Allow up to 100 million
-})
+// ─── Schema ──────────────────────────────────────────────────────────────────
 
-const gameSchema = z.object({
-  // Step 1: Basic Information (Most fields are read-only for editing)
-  code: z.string().optional(), // Read-only - no validation needed
-  name: z.string().min(3, 'Game name must be at least 3 characters'),
-  organizer: z.string().optional(), // Read-only - no validation needed
-  game_category: z.string().optional(), // Read-only - no validation needed
-  description: z.string().optional().nullable(),
+const editSchema = z.object({
+  // Step 1
+  name: z.string().min(3, 'Name must be at least 3 characters'),
+  description: z.string().optional(),
+  status: z.enum(['Draft', 'Active', 'Suspended']),
 
-  // Step 2: Game Format & Bet Types (Format is read-only)
-  game_format: z.string().optional(), // Read-only - no validation needed
-  number_range_min: z.number().optional(), // Read-only - no validation needed
-  number_range_max: z.number().optional(), // Read-only - no validation needed
-  selection_count: z.number().optional(), // Read-only - no validation needed
-  bet_types: z
-    .array(betTypeSchema)
-    .min(1, 'Bet types array cannot be empty')
-    .refine(types => types.some(t => t.enabled), {
-      message: 'At least one bet type must be enabled',
-    }),
-
-  // Step 3: Pricing & Limits
-  base_price: z.number().min(0.5, 'Minimum ticket price is ₵0.50').max(200),
-  min_stake: z.number().min(0.5, 'Minimum stake is ₵0.50').max(200000),
-  max_stake: z.number().min(0.5, 'Maximum stake is ₵0.50').max(200000),
-  max_tickets_per_player: z.number().min(1),
-  multi_draw_enabled: z.boolean(),
-  max_draws_advance: z.number().optional().nullable(),
-
-  // Step 4: Schedule
+  // Step 2
+  start_date: z.string().optional(),
+  end_date: z.string().optional(),
   draw_frequency: z.enum(['daily', 'weekly', 'bi_weekly', 'monthly', 'special']),
-  draw_days: z.array(z.string()).optional().nullable(),
-  draw_time: z.string().optional().nullable(),
-  sales_cutoff_minutes: z.number().min(5).max(1440),
+  draw_time: z.string().optional(),
+  draw_day: z.string().optional(),
+  sales_cutoff_minutes: z.number().min(1),
+  base_price: z.number().min(0.5, 'Minimum ₵0.50'),
+  total_tickets: z.number().min(1),
+  max_tickets_per_player: z.number().min(1),
+
+  // Step 3
+  prize_details: z.string().optional(),
+  rules: z.string().optional(),
 })
 
-type GameFormData = z.infer<typeof gameSchema>
-type BetType = z.infer<typeof betTypeSchema>
+type EditFormData = z.infer<typeof editSchema>
+
+const steps = [
+  { id: 1, title: 'Basic Info',      icon: Info },
+  { id: 2, title: 'Dates & Tickets', icon: Calendar },
+  { id: 3, title: 'Prize & Rules',   icon: FileText },
+  { id: 4, title: 'Review',          icon: Trophy },
+]
+
+const fieldsPerStep: Record<number, (keyof EditFormData)[]> = {
+  1: ['name', 'status'],
+  2: ['draw_frequency', 'base_price', 'total_tickets', 'max_tickets_per_player'],
+  3: [],
+  4: [],
+}
 
 interface EditGameWizardProps {
   isOpen: boolean
@@ -100,1049 +66,351 @@ interface EditGameWizardProps {
   game: Game | null
 }
 
-const steps = [
-  { id: 1, title: 'Basic Information', icon: Info },
-  { id: 2, title: 'Format & Bet Types', icon: Settings },
-  { id: 3, title: 'Pricing & Limits', icon: DollarSign },
-  { id: 4, title: 'Schedule', icon: Calendar },
-  { id: 5, title: 'Review & Submit', icon: Check },
-]
-
-// Default bet types - matches CreateGameWizard for consistency
-const defaultBetTypes: BetType[] = [
-  { id: 'direct_1', name: '1 Direct', enabled: true, multiplier: 40 },
-  { id: 'direct_2', name: '2 Direct', enabled: true, multiplier: 240 },
-  { id: 'direct_3', name: '3 Direct', enabled: true, multiplier: 1920 },
-  { id: 'direct_4', name: '4 Direct', enabled: false, multiplier: 180000 },
-  { id: 'direct_5', name: '5 Direct', enabled: false, multiplier: 15000000 },
-  { id: 'direct_6', name: '6 Direct', enabled: false, multiplier: 25000000 },
-  { id: 'perm_2', name: 'Perm 2', enabled: true, multiplier: 240 },
-  { id: 'perm_3', name: 'Perm 3', enabled: true, multiplier: 1920 },
-  { id: 'perm_4', name: 'Perm 4', enabled: false, multiplier: 60000 },
-  { id: 'perm_5', name: 'Perm 5', enabled: false, multiplier: 5000000 },
-  { id: 'perm_6', name: 'Perm 6', enabled: false, multiplier: 25000000 },
-  { id: 'banker', name: 'Banker All', enabled: true, multiplier: 240 },
-  { id: 'banker_against', name: 'Banker AG', enabled: true, multiplier: 240 },
-]
-
 export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const { toast } = useToast()
   const queryClient = useQueryClient()
 
-  const form = useForm<GameFormData>({
-    resolver: zodResolver(gameSchema),
+  const form = useForm<EditFormData>({
+    resolver: zodResolver(editSchema),
     defaultValues: {
-      code: '',
-      name: '',
-      organizer: 'rand_lottery',
-      game_category: 'national',
-      description: '',
-      game_format: '5_by_90',
-      number_range_min: 1,
-      number_range_max: 90,
-      selection_count: 5,
-      bet_types: defaultBetTypes,
-      base_price: 1,
-      min_stake: 1,
-      max_stake: 1000,
-      max_tickets_per_player: 10,
-      multi_draw_enabled: false,
-      max_draws_advance: 10,
-      draw_frequency: 'daily',
-      draw_days: [],
-      draw_time: '', // Match CreateGameWizard - empty by default
+      name: '', description: '', status: 'Draft',
+      start_date: '', end_date: '',
+      draw_frequency: 'daily', draw_time: '20:00', draw_day: 'Friday',
       sales_cutoff_minutes: 30,
+      base_price: 1, total_tickets: 1000, max_tickets_per_player: 10,
+      prize_details: '', rules: '',
     },
   })
 
-  // Update form when game prop changes
   useEffect(() => {
     if (game) {
-      console.log('EditGameWizard: Loading game data', {
-        gameId: game.id,
-        gameName: game.name,
-        betTypes: game.bet_types,
-        betTypesLength: game.bet_types?.length,
-      })
-
-      // Map existing bet types to the form structure
-      let mappedBetTypes: BetType[]
-
-      if (game.bet_types && game.bet_types.length > 0) {
-        // Use existing bet types from the game
-        mappedBetTypes = game.bet_types.map(bt => ({
-          id: bt.id || '',
-          name: bt.name || '',
-          enabled: bt.enabled ?? false,
-          multiplier: bt.multiplier || 1,
-        }))
-        console.log('EditGameWizard: Using existing bet types', mappedBetTypes)
-      } else {
-        // Use default bet types if none exist
-        mappedBetTypes = defaultBetTypes.map(bt => ({ ...bt }))
-        console.log('EditGameWizard: Using default bet types', mappedBetTypes)
-      }
-
-      console.log('EditGameWizard: About to reset form with bet types', {
-        mappedBetTypesCount: mappedBetTypes.length,
-        enabledCount: mappedBetTypes.filter(bt => bt.enabled).length,
-        mappedBetTypes,
-      })
-
       form.reset({
-        code: game.code || '',
         name: game.name || '',
-        organizer: game.organizer || 'rand_lottery',
-        game_category: game.game_category || 'national',
         description: game.description || '',
-        game_format: game.game_format || '5_by_90',
-        number_range_min: game.number_range_min || 1,
-        number_range_max: game.number_range_max || 90,
-        selection_count: game.selection_count || 5,
-        bet_types: mappedBetTypes,
-        base_price: game.base_price || 1,
-        min_stake: game.min_stake || 1,
-        max_stake: game.max_stake || 1000,
-        max_tickets_per_player: game.max_tickets_per_player || 10,
-        multi_draw_enabled: game.multi_draw_enabled || false,
-        max_draws_advance: game.max_draws_advance || 10,
-        draw_frequency:
-          (game.draw_frequency?.toLowerCase() as
-            | 'special'
-            | 'daily'
-            | 'weekly'
-            | 'bi_weekly'
-            | 'monthly') || 'daily',
-        draw_days: game.draw_days || [],
-        draw_time: game.draw_time || '', // Use actual value or empty string
+        status: (game.status as 'Draft' | 'Active' | 'Suspended') || 'Draft',
+        start_date: game.start_date || '',
+        end_date: game.end_date || '',
+        draw_frequency: (game.draw_frequency as EditFormData['draw_frequency']) || 'daily',
+        draw_time: game.draw_time || '20:00',
+        draw_day: game.draw_days?.[0] || 'Friday',
         sales_cutoff_minutes: game.sales_cutoff_minutes || 30,
+        base_price: game.base_price || 1,
+        total_tickets: game.total_tickets || 1000,
+        max_tickets_per_player: game.max_tickets_per_player || 10,
+        prize_details: game.prize_details || '',
+        rules: game.rules || '',
       })
-
       setCurrentStep(1)
-
-      console.log('EditGameWizard: Form reset complete', {
-        betTypes: form.getValues('bet_types'),
-        scheduleValues: {
-          draw_frequency: form.getValues('draw_frequency'),
-          draw_time: form.getValues('draw_time'),
-          sales_cutoff_minutes: form.getValues('sales_cutoff_minutes'),
-          draw_days: form.getValues('draw_days'),
-        },
-        allValues: form.getValues(),
-      })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game])
-
-  // Helper function to convert time string to GMT
-  const convertTimeToGMT = (timeString?: string | null): string | undefined => {
-    if (!timeString) return undefined
-
-    // Create a date object with today's date and the selected time in GMT
-    const today = new Date()
-    const [hours, minutes] = timeString.split(':')
-    const gmtDate = new Date(
-      Date.UTC(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate(),
-        parseInt(hours),
-        parseInt(minutes)
-      )
-    )
-
-    // Format back to HH:mm in GMT
-    return formatInGhanaTime(gmtDate, 'HH:mm')
-  }
+  }, [game, form])
 
   const updateMutation = useMutation({
-    mutationFn: async (data: GameFormData) => {
+    mutationFn: async (data: EditFormData) => {
       if (!game?.id) throw new Error('No game ID')
-
-      console.log('EditGameWizard: Preparing update data', {
-        gameId: game.id,
-        formData: data,
-        originalDrawTime: data.draw_time,
-        convertedDrawTime: convertTimeToGMT(data.draw_time),
-      })
-
-      const updateData: UpdateGameRequest = {
+      return gameService.updateGame(game.id, {
         name: data.name,
-        description: data.description || undefined,
-        bet_types: data.bet_types,
+        description: data.description,
         base_price: data.base_price,
-        min_stake: data.min_stake,
-        max_stake: data.max_stake,
+        total_tickets: data.total_tickets,
         max_tickets_per_player: data.max_tickets_per_player,
-        multi_draw_enabled: data.multi_draw_enabled,
-        max_draws_advance: data.max_draws_advance || undefined,
-        draw_frequency: data.draw_frequency, // Already in lowercase format
-        draw_days: data.draw_days || undefined,
-        draw_time: convertTimeToGMT(data.draw_time),
+        draw_frequency: data.draw_frequency,
+        draw_days: data.draw_day ? [data.draw_day] : [],
+        draw_time: data.draw_time,
         sales_cutoff_minutes: data.sales_cutoff_minutes,
-      }
-
-      console.log('EditGameWizard: Sending update request', {
-        gameId: game.id,
-        updateData,
+        start_date: data.start_date || undefined,
+        end_date: data.end_date || undefined,
+        prize_details: data.prize_details,
+        rules: data.rules,
       })
-
-      return gameService.updateGame(game.id, updateData)
     },
-    onSuccess: response => {
-      console.log('EditGameWizard: Update successful', response)
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
-      toast({
-        title: 'Success',
-        description: 'Game updated successfully',
-      })
-      onClose()
-      form.reset()
-      setCurrentStep(1)
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
+      toast({ title: 'Competition updated successfully' })
+      onClose(); setCurrentStep(1)
     },
     onError: (error: unknown) => {
-      console.error('EditGameWizard: Update failed', error)
-      const axiosError = error as { response?: { data?: { message?: string } } }
-      toast({
-        title: 'Error',
-        description: axiosError.response?.data?.message || 'Failed to update game',
-        variant: 'destructive',
-      })
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast({ title: 'Error', description: msg || 'Failed to update', variant: 'destructive' })
     },
   })
 
   const handleNext = async () => {
-    const fieldsToValidate = getFieldsForStep(currentStep)
-    const currentBetTypes = form.getValues('bet_types')
-    console.log('EditGameWizard: handleNext called', {
-      currentStep,
-      fieldsToValidate,
-      betTypes: currentBetTypes,
-      betTypesCount: currentBetTypes?.length,
-      enabledBetTypes: currentBetTypes?.filter(bt => bt.enabled),
-      enabledCount: currentBetTypes?.filter(bt => bt.enabled).length,
-      formValues: form.getValues(),
-      formErrors: form.formState.errors,
-    })
-
-    // Only validate if there are fields to validate for this step
-    let isValid = true
-    if (fieldsToValidate.length > 0) {
-      isValid = await form.trigger(fieldsToValidate as Parameters<typeof form.trigger>[0])
-      console.log('EditGameWizard: Validation result', {
-        isValid,
-        errors: form.formState.errors,
-        betTypesAfterValidation: form.getValues('bet_types'),
-      })
+    const valid = await form.trigger(fieldsPerStep[currentStep])
+    if (!valid) return
+    if (currentStep === steps.length) {
+      updateMutation.mutate(form.getValues())
     } else {
-      console.log('EditGameWizard: No fields to validate, advancing...')
-    }
-
-    if (isValid) {
-      if (currentStep === 5) {
-        // Submit the form - do full validation before submitting
-        const allFieldsValid = await form.trigger()
-        if (allFieldsValid) {
-          const formData = form.getValues()
-          updateMutation.mutate(formData)
-        } else {
-          toast({
-            title: 'Validation Error',
-            description: 'Please review all fields before submitting',
-            variant: 'destructive',
-          })
-        }
-      } else {
-        setCurrentStep(currentStep + 1)
-      }
-    } else {
-      // Show validation errors to user
-      const errors = form.formState.errors
-      console.error('EditGameWizard: Validation failed', errors)
-
-      // Special logging for bet_types errors
-      if (errors.bet_types) {
-        console.error('EditGameWizard: Bet types error details:', {
-          errorType: typeof errors.bet_types,
-          error: errors.bet_types,
-          message: errors.bet_types.message,
-          arrayErrors: errors.bet_types.root || errors.bet_types,
-        })
-
-        // Log each individual bet type error
-        if (Array.isArray(errors.bet_types)) {
-          errors.bet_types.forEach((err: { multiplier?: { message?: string } }, index: number) => {
-            if (err) {
-              const currentBetType = form.getValues(`bet_types.${index}`)
-              console.error(`Bet type ${index} error:`, {
-                error: err,
-                currentValue: currentBetType,
-                multiplierError: err.multiplier,
-              })
-            }
-          })
-        }
-      }
-
-      // Build detailed error message
-      const errorMessages: string[] = []
-      fieldsToValidate.forEach(fieldName => {
-        const error = errors[fieldName]
-        if (error) {
-          const fieldLabel = fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-          const errorMsg = error.message || JSON.stringify(error)
-          errorMessages.push(`${fieldLabel}: ${errorMsg}`)
-          console.error(`Field ${fieldName} error:`, error)
-        }
-      })
-
-      toast({
-        title: 'Validation Error',
-        description:
-          errorMessages.length > 0
-            ? errorMessages.join('. ')
-            : 'Please fix the errors before continuing',
-        variant: 'destructive',
-      })
+      setCurrentStep(s => s + 1)
     }
   }
 
-  const handlePrevious = () => {
-    setCurrentStep(currentStep - 1)
-  }
-
-  const getFieldsForStep = (step: number): (keyof GameFormData)[] => {
-    switch (step) {
-      case 1:
-        return ['name'] // Only validate required fields
-      case 2:
-        return ['bet_types']
-      case 3:
-        return ['base_price', 'min_stake', 'max_stake', 'max_tickets_per_player']
-      case 4:
-        return ['draw_frequency', 'sales_cutoff_minutes'] // draw_time is optional
-      default:
-        return []
-    }
-  }
-
-  const getStepProgress = () => {
-    return ((currentStep - 1) / (steps.length - 1)) * 100
-  }
-
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return renderBasicInfo()
-      case 2:
-        return renderFormatAndBetTypes()
-      case 3:
-        return renderPricingAndLimits()
-      case 4:
-        return renderSchedule()
-      case 5:
-        return renderReview()
-      default:
-        return null
-    }
-  }
-
-  const renderBasicInfo = () => (
-    <div className="space-y-4">
-      <Alert>
-        <Lock className="h-4 w-4" />
-        <AlertDescription>
-          Some fields are read-only after game creation and require approval to change.
-        </AlertDescription>
-      </Alert>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormField
-          control={form.control}
-          name="code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Game Code</FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <Input
-                    {...field}
-                    value={field.value as string}
-                    disabled
-                    className="pr-8 bg-gray-50"
-                  />
-                  <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                </div>
-              </FormControl>
-              <FormDescription>Cannot be changed after creation</FormDescription>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Game Name</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value as string}
-                  placeholder="e.g., National Lotto 5/90"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormField
-          control={form.control}
-          name="organizer"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Organizer</FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <Input
-                    {...field}
-                    value={
-                      (field.value === 'nla'
-                        ? 'National Lottery Authority'
-                        : 'Spiel') as string
-                    }
-                    disabled
-                    className="pr-8 bg-gray-50"
-                  />
-                  <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                </div>
-              </FormControl>
-              <FormDescription>Cannot be changed after creation</FormDescription>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="game_category"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Category</FormLabel>
-              <FormControl>
-                <div className="relative">
-                  <Input
-                    {...field}
-                    value={(field.value === 'national' ? 'National' : 'Private') as string}
-                    disabled
-                    className="pr-8 bg-gray-50 capitalize"
-                  />
-                  <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                </div>
-              </FormControl>
-              <FormDescription>Cannot be changed after creation</FormDescription>
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <FormField
-        control={form.control}
-        name="description"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Description (Optional)</FormLabel>
-            <FormControl>
-              <Textarea
-                {...field}
-                value={(field.value || '') as string}
-                placeholder="Enter game description..."
-                className="min-h-[100px]"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-  )
-
-  const renderFormatAndBetTypes = () => {
-    const betTypes = form.watch('bet_types')
-    console.log('EditGameWizard: Rendering bet types', {
-      betTypesCount: betTypes?.length,
-      betTypes: betTypes,
-    })
-
-    return (
-      <div className="space-y-4">
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription>
-            Game format and number range cannot be changed after creation.
-          </AlertDescription>
-        </Alert>
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="game_format"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Game Format</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      {...field}
-                      value={(field.value as string)?.replace(/_/g, ' ').toUpperCase() || ''}
-                      disabled
-                      className="pr-8 bg-gray-50"
-                    />
-                    <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                </FormControl>
-                <FormDescription>Cannot be changed after creation</FormDescription>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="selection_count"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Selection Count</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      {...field}
-                      value={field.value as number}
-                      type="number"
-                      disabled
-                      className="pr-8 bg-gray-50"
-                    />
-                    <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                </FormControl>
-                <FormDescription>Numbers to select per ticket</FormDescription>
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="number_range_min"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Min Number</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      {...field}
-                      value={field.value as number}
-                      type="number"
-                      disabled
-                      className="pr-8 bg-gray-50"
-                    />
-                    <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="number_range_max"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Max Number</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      {...field}
-                      value={field.value as number}
-                      type="number"
-                      disabled
-                      className="pr-8 bg-gray-50"
-                    />
-                    <Lock className="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
-                  </div>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <FormField
-          control={form.control}
-          name="bet_types"
-          render={() => (
-            <FormItem>
-              <FormLabel>Bet Types</FormLabel>
-              <div className="border rounded-lg p-4 space-y-3">
-                {form.watch('bet_types')?.map((betType, index) => (
-                  <div key={betType.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Switch
-                        checked={betType.enabled}
-                        onCheckedChange={checked => {
-                          const currentBetTypes = [...form.getValues('bet_types')]
-                          currentBetTypes[index] = { ...currentBetTypes[index], enabled: checked }
-                          form.setValue('bet_types', currentBetTypes, { shouldValidate: true })
-                        }}
-                      />
-                      <span className="font-medium">{betType.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">Multiplier:</span>
-                      <Input
-                        type="number"
-                        value={betType.multiplier}
-                        onChange={e => {
-                          const currentBetTypes = [...form.getValues('bet_types')]
-                          currentBetTypes[index] = {
-                            ...currentBetTypes[index],
-                            multiplier: parseInt(e.target.value) || 1,
-                          }
-                          form.setValue('bet_types', currentBetTypes, { shouldValidate: true })
-                        }}
-                        className="w-24"
-                        min={1}
-                        max={100000000}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <FormDescription>
-                Enable bet types and set their multipliers. At least one must be enabled.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-    )
-  }
-
-  const renderPricingAndLimits = () => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <FormField
-          control={form.control}
-          name="base_price"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Base Ticket Price (₵)</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value as number}
-                  type="number"
-                  step="0.5"
-                  onChange={e => field.onChange(parseFloat(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>Base price per ticket</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="max_tickets_per_player"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Max Tickets per Player</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value as number}
-                  type="number"
-                  onChange={e => field.onChange(parseInt(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>Maximum tickets per transaction</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormField
-          control={form.control}
-          name="min_stake"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Minimum Stake (₵)</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value as number}
-                  type="number"
-                  step="0.5"
-                  onChange={e => field.onChange(parseFloat(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>Minimum bet amount</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="max_stake"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Maximum Stake (₵)</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value as number}
-                  type="number"
-                  step="0.5"
-                  onChange={e => field.onChange(parseFloat(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>Maximum bet amount</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="space-y-4 border rounded-lg p-4">
-        <FormField
-          control={form.control}
-          name="multi_draw_enabled"
-          render={({ field }) => (
-            <FormItem className="flex items-center justify-between">
-              <div>
-                <FormLabel>Multi-Draw Enabled</FormLabel>
-                <FormDescription>Allow players to enter multiple draws</FormDescription>
-              </div>
-              <FormControl>
-                <Switch checked={field.value as boolean} onCheckedChange={field.onChange} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        {form.watch('multi_draw_enabled') && (
-          <FormField
-            control={form.control}
-            name="max_draws_advance"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Max Draws in Advance</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    type="number"
-                    value={(field.value as string) || ''}
-                    onChange={e => field.onChange(parseInt(e.target.value) || null)}
-                  />
-                </FormControl>
-                <FormDescription>Maximum number of future draws</FormDescription>
-              </FormItem>
-            )}
-          />
-        )}
-      </div>
-    </div>
-  )
-
-  const renderSchedule = () => {
-    const drawFrequency = form.watch('draw_frequency')
-
-    return (
-      <div className="space-y-4">
-        <FormField
-          control={form.control}
-          name="draw_frequency"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Draw Frequency</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value as string}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="bi_weekly">Bi-Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                  <SelectItem value="special">Special</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {(drawFrequency === 'weekly' || drawFrequency === 'bi_weekly') && (
-          <FormField
-            control={form.control}
-            name="draw_days"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Draw Days</FormLabel>
-                <div className="grid grid-cols-7 gap-2">
-                  {[
-                    { short: 'Mon', full: 'monday' },
-                    { short: 'Tue', full: 'tuesday' },
-                    { short: 'Wed', full: 'wednesday' },
-                    { short: 'Thu', full: 'thursday' },
-                    { short: 'Fri', full: 'friday' },
-                    { short: 'Sat', full: 'saturday' },
-                    { short: 'Sun', full: 'sunday' },
-                  ].map(day => (
-                    <label key={day.full} className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={(field.value as string[])?.includes(day.full) || false}
-                        onChange={e => {
-                          const currentDays = (field.value as string[]) || []
-                          if (e.target.checked) {
-                            field.onChange([...currentDays, day.full])
-                          } else {
-                            field.onChange(currentDays.filter((d: string) => d !== day.full))
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span className="text-sm">{day.short}</span>
-                    </label>
-                  ))}
-                </div>
-                <FormDescription>Select days for draws</FormDescription>
-              </FormItem>
-            )}
-          />
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="draw_time"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Draw Time (GMT)</FormLabel>
-                <FormControl>
-                  <Input {...field} type="time" value={(field.value as string) || ''} />
-                </FormControl>
-                <FormDescription>Enter the draw time in GMT timezone</FormDescription>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="sales_cutoff_minutes"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Sales Cutoff (minutes)</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    value={field.value as number}
-                    type="number"
-                    onChange={e => field.onChange(parseInt(e.target.value))}
-                  />
-                </FormControl>
-                <FormDescription>Minutes before draw to stop sales</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  const renderReview = () => {
-    const values = form.getValues()
-    const enabledBetTypes = values.bet_types.filter(bt => bt.enabled)
-
-    return (
-      <div className="space-y-4">
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Please review your changes before submitting. Some changes may require approval.
-          </AlertDescription>
-        </Alert>
-
-        <div className="space-y-3">
-          <div className="border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Basic Information</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-gray-500">Code:</span>{' '}
-                <span className="font-medium">{values.code}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Name:</span>{' '}
-                <span className="font-medium">{values.name}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Category:</span>{' '}
-                <span className="font-medium capitalize">{values.game_category}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Format:</span>{' '}
-                <span className="font-medium">
-                  {values.game_format?.replace(/_/g, ' ').toUpperCase()}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Bet Types</h4>
-            <div className="space-y-1 text-sm">
-              {enabledBetTypes.map(bt => (
-                <div key={bt.id} className="flex justify-between">
-                  <span>{bt.name}</span>
-                  <span className="text-gray-500">×{bt.multiplier}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Pricing & Limits</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-gray-500">Base Price:</span>{' '}
-                <span className="font-medium">₵{values.base_price}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Stake Range:</span>{' '}
-                <span className="font-medium">
-                  ₵{values.min_stake} - ₵{values.max_stake}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Max Tickets:</span>{' '}
-                <span className="font-medium">{values.max_tickets_per_player}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Multi-Draw:</span>{' '}
-                <span className="font-medium">{values.multi_draw_enabled ? 'Yes' : 'No'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Schedule</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-gray-500">Frequency:</span>{' '}
-                <span className="font-medium capitalize">
-                  {values.draw_frequency.replace('_', '-')}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500">Draw Time:</span>{' '}
-                <span className="font-medium">{values.draw_time || 'Not set'}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Sales Cutoff:</span>{' '}
-                <span className="font-medium">{values.sales_cutoff_minutes} mins</span>
-              </div>
-              {values.draw_days && values.draw_days.length > 0 && (
-                <div>
-                  <span className="text-gray-500">Days:</span>{' '}
-                  <span className="font-medium capitalize">{values.draw_days.join(', ')}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const progress = ((currentStep - 1) / (steps.length - 1)) * 100
+  const freq = form.watch('draw_frequency')
+  const showDrawDay = freq === 'weekly' || freq === 'bi_weekly'
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Game Configuration</DialogTitle>
-          <DialogDescription>
-            Update game settings. Some fields are read-only and may require approval.
-          </DialogDescription>
+          <DialogTitle>Edit Competition</DialogTitle>
+          <DialogDescription>Update competition settings</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Progress Bar */}
-          <div className="space-y-2">
-            <Progress value={getStepProgress()} className="h-2" />
-            <div className="flex justify-between">
-              {steps.map(step => {
-                const Icon = step.icon
-                return (
-                  <div
-                    key={step.id}
-                    className={`flex flex-col items-center gap-1 ${
-                      currentStep >= step.id ? 'text-primary' : 'text-gray-400'
-                    }`}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span className="text-xs font-medium">{step.title}</span>
-                  </div>
-                )
-              })}
-            </div>
+        {/* Progress */}
+        <div className="space-y-2">
+          <Progress value={progress} className="h-1.5" />
+          <div className="flex justify-between">
+            {steps.map(step => {
+              const Icon = step.icon
+              return (
+                <div key={step.id} className={`flex items-center gap-1.5 text-xs ${
+                  step.id === currentStep ? 'text-primary font-medium'
+                  : step.id < currentStep ? 'text-muted-foreground'
+                  : 'text-muted-foreground/40'
+                }`}>
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{step.title}</span>
+                </div>
+              )
+            })}
           </div>
-
-          {/* Form Content */}
-          <Form {...form}>
-            <form className="space-y-6">{renderStep()}</form>
-          </Form>
         </div>
 
-        <DialogFooter>
-          <div className="flex justify-between w-full">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStep === 1 || updateMutation.isPending}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Previous
-            </Button>
+        <Form {...form}>
+          <form className="space-y-4 pt-2">
 
-            <Button type="button" onClick={handleNext} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Updating...
-                </>
-              ) : currentStep === 5 ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Update Game
-                </>
-              ) : (
-                <>
-                  Next
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </>
-              )}
+            {/* ── Step 1: Basic Info ── */}
+            {currentStep === 1 && (
+              <div className="space-y-4">
+                <FormField control={form.control} name="name" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Competition Name</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="description" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                    <FormControl>
+                      <Textarea className="resize-none" rows={2} {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="Draft">Draft</SelectItem>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Suspended">Suspended</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            )}
+
+            {/* ── Step 2: Dates & Tickets ── */}
+            {currentStep === 2 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="start_date" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Start Date</FormLabel>
+                      <FormControl><Input type="date" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="end_date" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>End Date</FormLabel>
+                      <FormControl><Input type="date" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="draw_frequency" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Draw Frequency</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="daily">Daily</SelectItem>
+                          <SelectItem value="weekly">Weekly</SelectItem>
+                          <SelectItem value="bi_weekly">Bi-Weekly</SelectItem>
+                          <SelectItem value="monthly">Monthly</SelectItem>
+                          <SelectItem value="special">Special (once)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="draw_time" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Draw Time</FormLabel>
+                      <FormControl><Input type="time" {...field} value={field.value ?? ''} /></FormControl>
+                      <FormDescription>Ghana time (GMT+0)</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
+                {showDrawDay && (
+                  <FormField control={form.control} name="draw_day" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Draw Day</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => (
+                            <SelectItem key={d} value={d}>{d}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
+
+                <FormField control={form.control} name="sales_cutoff_minutes" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sales Cutoff</FormLabel>
+                    <Select value={String(field.value)} onValueChange={v => field.onChange(parseInt(v))}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="15">15 min before draw</SelectItem>
+                        <SelectItem value="30">30 min before draw</SelectItem>
+                        <SelectItem value="60">1 hour before draw</SelectItem>
+                        <SelectItem value="120">2 hours before draw</SelectItem>
+                        <SelectItem value="360">6 hours before draw</SelectItem>
+                        <SelectItem value="720">12 hours before draw</SelectItem>
+                        <SelectItem value="1440">24 hours before draw</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField control={form.control} name="base_price" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ticket Price (₵)</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.50" min="0.50" {...field}
+                          onChange={e => field.onChange(parseFloat(e.target.value))} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="total_tickets" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Total Tickets</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="1" {...field}
+                          onChange={e => field.onChange(parseInt(e.target.value))} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="max_tickets_per_player" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max per Player</FormLabel>
+                      <FormControl>
+                        <Input type="number" min="1" {...field}
+                          onChange={e => field.onChange(parseInt(e.target.value))} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 3: Prize & Rules ── */}
+            {currentStep === 3 && (
+              <div className="space-y-4">
+                <FormField control={form.control} name="prize_details" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Prize Details</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="e.g., 1st Prize: BMW 3 Series&#10;2nd Prize: GHS 50,000 cash"
+                        className="resize-none" rows={5} {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="rules" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Rules</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="e.g., 1. One ticket per transaction&#10;2. Open to Ghana residents only"
+                        className="resize-none" rows={5} {...field} value={field.value ?? ''} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            )}
+
+            {/* ── Step 4: Review ── */}
+            {currentStep === 4 && (
+              <div className="space-y-4">
+                <div className="rounded-lg border divide-y text-sm">
+                  {[
+                    { label: 'Name',          value: form.watch('name') },
+                    { label: 'Status',        value: form.watch('status') },
+                    { label: 'Frequency',     value: form.watch('draw_frequency')?.replace('_', '-') },
+                    { label: 'Draw Time',     value: form.watch('draw_time') },
+                    ...(showDrawDay ? [{ label: 'Draw Day', value: form.watch('draw_day') }] : []),
+                    { label: 'Start Date',    value: form.watch('start_date') || '—' },
+                    { label: 'End Date',      value: form.watch('end_date') || '—' },
+                    { label: 'Ticket Price',  value: `₵${form.watch('base_price')}` },
+                    { label: 'Total Tickets', value: form.watch('total_tickets')?.toLocaleString() },
+                    { label: 'Max per Player',value: form.watch('max_tickets_per_player')?.toLocaleString() },
+                  ].map(row => (
+                    <div key={row.label} className="flex justify-between px-4 py-2.5">
+                      <span className="text-muted-foreground">{row.label}</span>
+                      <span className="font-medium">{row.value || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
+                  Changes will be applied immediately.
+                </p>
+              </div>
+            )}
+
+          </form>
+        </Form>
+
+        <DialogFooter className="gap-2 pt-2">
+          {currentStep > 1 && (
+            <Button variant="outline" onClick={() => setCurrentStep(s => s - 1)} disabled={updateMutation.isPending}>
+              <ArrowLeft className="mr-2 h-4 w-4" />Back
             </Button>
-          </div>
+          )}
+          <div className="flex-1" />
+          <Button variant="outline" onClick={onClose} disabled={updateMutation.isPending}>Cancel</Button>
+          <Button onClick={handleNext} disabled={updateMutation.isPending}>
+            {updateMutation.isPending ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+            ) : currentStep === steps.length ? (
+              <><Check className="mr-2 h-4 w-4" />Save Changes</>
+            ) : (
+              <>Next<ArrowRight className="ml-2 h-4 w-4" /></>
+            )}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	playerv1 "github.com/randco/randco-microservices/proto/player/v1"
@@ -61,6 +62,12 @@ func (h *PlayerServiceHandler) RegisterPlayer(ctx context.Context, req *playerv1
 	registrationReq := models.RegistrationRequest{
 		PhoneNumber:         req.PhoneNumber,
 		Password:            req.Password,
+		Email:               req.Email,
+		FirstName:           req.FirstName,
+		LastName:            req.LastName,
+		DateOfBirth:         req.DateOfBirth.AsTime(),
+		NationalID:          req.NationalId,
+		MobileMoneyPhone:    req.MobileMoneyPhone,
 		DeviceID:            req.DeviceId,
 		RegistrationChannel: req.Channel,
 		TermsAccepted:       req.TermsAccepted,
@@ -72,15 +79,30 @@ func (h *PlayerServiceHandler) RegisterPlayer(ctx context.Context, req *playerv1
 		return nil, h.handleError(err, "RegisterPlayer")
 	}
 
+	// Update profile with name/email if provided
+	if req.FirstName != "" || req.LastName != "" || req.Email != "" {
+		updateReq := models.UpdatePlayerRequest{
+			ID:        player.ID,
+			FirstName: req.FirstName,
+			LastName:  req.LastName,
+			Email:     req.Email,
+		}
+		if _, err := h.profileService.UpdateProfile(ctx, updateReq); err != nil {
+			fmt.Printf("Warning: Failed to update profile for player %s: %v\n", player.ID.String(), err)
+		}
+	}
+
+	// Try to send OTP, but don't fail registration if it fails
 	err = h.otpService.GenerateAndSendOTP(ctx, player.PhoneNumber, "registration")
 	if err != nil {
-		return nil, h.handleError(err, "RegisterPlayer")
+		// Log the error but don't fail the registration
+		fmt.Printf("Warning: Failed to send OTP for player %s: %v\n", player.ID.String(), err)
 	}
 
 	return &playerv1.RegisterPlayerResponse{
-		RequiresOtp: true,
+		RequiresOtp: false, // Set to false since OTP might not work
 		SessionId:   player.ID.String(),
-		Message:     "Registration initiated. Please verify OTP.",
+		Message:     "Registration successful. You can now log in.",
 	}, nil
 }
 
@@ -158,11 +180,13 @@ func (h *PlayerServiceHandler) RefreshToken(ctx context.Context, req *playerv1.R
 }
 
 func (h *PlayerServiceHandler) Logout(ctx context.Context, req *playerv1.LogoutRequest) (*emptypb.Empty, error) {
-	// Revoke token
-	err := h.authService.RevokeToken(ctx, req.RefreshToken)
-	if err != nil {
-		return nil, h.handleError(err, "Logout")
+	// If no refresh token provided, just return success (already logged out)
+	if req.RefreshToken == "" {
+		return &emptypb.Empty{}, nil
 	}
+
+	// Revoke token - ignore errors (token may already be expired/invalid)
+	_ = h.authService.RevokeToken(ctx, req.RefreshToken)
 
 	return &emptypb.Empty{}, nil
 }
@@ -568,11 +592,23 @@ func (h *PlayerServiceHandler) handleError(err error, operation string) error {
 		return nil
 	}
 
-	// Log the error (TODO: Add proper logging)
 	fmt.Printf("Error in %s: %v\n", operation, err)
 
-	// Return appropriate gRPC status
-	return status.Errorf(codes.Internal, "internal server error during %s", operation)
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "already registered") || strings.Contains(msg, "already exists") || strings.Contains(msg, "duplicate"):
+		return status.Errorf(codes.AlreadyExists, "%s", msg)
+	case strings.Contains(msg, "invalid credentials") || strings.Contains(msg, "invalid password") || strings.Contains(msg, "invalid refresh token"):
+		return status.Errorf(codes.Unauthenticated, "%s", msg)
+	case strings.Contains(msg, "not found"):
+		return status.Errorf(codes.NotFound, "%s", msg)
+	case strings.Contains(msg, "not active") || strings.Contains(msg, "suspended") || strings.Contains(msg, "permission"):
+		return status.Errorf(codes.PermissionDenied, "%s", msg)
+	case strings.Contains(msg, "invalid") || strings.Contains(msg, "validation") || strings.Contains(msg, "required"):
+		return status.Errorf(codes.InvalidArgument, "%s", msg)
+	default:
+		return status.Errorf(codes.Internal, "internal server error during %s", operation)
+	}
 }
 
 func (h *PlayerServiceHandler) ResendOTP(ctx context.Context, req *playerv1.ResendOTPRequest) (*emptypb.Empty, error) {
