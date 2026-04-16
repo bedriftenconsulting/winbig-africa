@@ -143,12 +143,10 @@ export function GenerateScheduleDialog({ isOpen, onClose, selectedMonth }: Gener
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      // Generate schedules for every week of the selected month
-      const weekStarts = getWeekStartsForMonth(selectedMonth)
-      for (const weekStart of weekStarts) {
-        await gameService.generateWeeklySchedule(format(weekStart, 'yyyy-MM-dd'))
-      }
-      return { weeks: weekStarts.length }
+      // Generate schedule for the current week only (Sunday-Saturday)
+      const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 0 })
+      await gameService.generateWeeklySchedule(format(currentWeekStart, 'yyyy-MM-dd'))
+      return { weeks: 1 }
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
