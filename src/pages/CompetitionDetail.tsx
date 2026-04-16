@@ -159,7 +159,12 @@ const CompetitionDetail = () => {
   };
 
   const issueTicket = async (token: string, totalAmount: number) => {
-    if (!scheduleId || !comp) return;
+    if (!comp) return;
+
+    // For competition games without a schedule, use a placeholder schedule ID
+    // The ticket service will handle games that don't require a specific draw schedule
+    const effectiveScheduleId = scheduleId || `direct-${comp.id}`;
+
     try {
       const tickets: string[] = [];
       for (let i = 0; i < qty; i++) {
@@ -167,9 +172,9 @@ const CompetitionDetail = () => {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            game_code: gameCode || "COMP",
-            game_schedule_id: scheduleId,
-            draw_number: drawNumber,
+            game_code: gameCode || comp.id,
+            game_schedule_id: effectiveScheduleId,
+            draw_number: drawNumber || 1,
             selected_numbers: [],
             bet_lines: [
               {
@@ -182,12 +187,12 @@ const CompetitionDetail = () => {
             customer_phone: user!.phone_number,
             customer_name: `${user!.first_name} ${user!.last_name}`.trim() || user!.phone_number,
             payment_method: "mobile_money",
-            payment_ref: txRef,
+            payment_ref: txRef || `manual-${Date.now()}`,
           }),
         });
         const data = await res.json();
         if (!res.ok) {
-          const msg = data?.message || data?.error || "Ticket purchase failed";
+          const msg = data?.message || data?.error?.message || data?.error || "Ticket purchase failed";
           throw new Error(msg);
         }
         const serial = data?.data?.ticket?.serial_number || data?.ticket?.serial_number || `TKT-${Math.floor(10000000 + Math.random() * 89999999)}`;
@@ -195,10 +200,9 @@ const CompetitionDetail = () => {
       }
       setTicketNumbers(tickets);
       setStep("success");
-      // Update sold count locally so progress bar reflects the purchase
       setComp(prev => prev ? { ...prev, soldTickets: prev.soldTickets + qty } : prev);
     } catch (err: any) {
-      setErrorMsg("Payment received but ticket issuance failed. Contact support with ref: " + txRef);
+      setErrorMsg(err.message || "Ticket issuance failed. Contact support with ref: " + (txRef || "N/A"));
       setStep("error");
     }
   };
