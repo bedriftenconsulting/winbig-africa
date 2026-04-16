@@ -9,23 +9,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { CalendarPlus, Loader2 } from 'lucide-react'
-import { format, startOfMonth, endOfMonth, addWeeks, getDay, addDays, parseISO, startOfWeek, isAfter } from 'date-fns'
+import { format, startOfMonth, endOfMonth, getDay, addDays, parseISO, startOfWeek, addWeeks } from 'date-fns'
 import { gameService, type Game } from '@/services/games'
 import { toast } from '@/hooks/use-toast'
-
-// Get all Sunday-starting weeks that overlap with a given month
-function getWeekStartsForMonth(month: Date): Date[] {
-  const monthStart = startOfMonth(month)
-  const monthEnd = endOfMonth(month)
-  const weeks: Date[] = []
-  // Start from the Sunday of the week containing the first day of the month
-  let current = startOfWeek(monthStart, { weekStartsOn: 0 })
-  while (!isAfter(current, monthEnd)) {
-    weeks.push(new Date(current))
-    current = addWeeks(current, 1)
-  }
-  return weeks
-}
 
 interface GenerateScheduleDialogProps {
   isOpen: boolean
@@ -121,7 +107,6 @@ function getDrawDatesForGame(game: Game, month: Date): { date: Date; label: stri
 
 export function GenerateScheduleDialog({ isOpen, onClose, selectedMonth }: GenerateScheduleDialogProps) {
   const queryClient = useQueryClient()
-  const monthLabel = format(selectedMonth, 'MMMM yyyy')
 
   // Fetch active games
   const { data: gamesData, isLoading: gamesLoading } = useQuery({
@@ -155,13 +140,13 @@ export function GenerateScheduleDialog({ isOpen, onClose, selectedMonth }: Gener
       await gameService.generateWeeklySchedule(format(currentWeekStart, 'yyyy-MM-dd'))
       return { weeks: 1 }
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
       queryClient.invalidateQueries({ queryKey: ['gameSchedules'] })
       queryClient.invalidateQueries({ queryKey: ['draws'] })
       toast({
         title: 'Schedule Generated',
-        description: `Schedules created for ${result.weeks} week${result.weeks !== 1 ? 's' : ''} in ${monthLabel}.`,
+        description: `Schedules created for the current week.`,
       })
       onClose()
     },
