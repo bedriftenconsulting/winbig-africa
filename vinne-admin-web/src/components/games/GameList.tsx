@@ -36,7 +36,6 @@ import {
   Pause,
   Search,
   Calendar,
-  Trophy,
   Eye,
   Send,
   CheckCircle,
@@ -358,14 +357,7 @@ export function GameList({
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onManagePrizes(game)}
-                          title="Manage Prizes"
-                        >
-                          <Trophy className="h-4 w-4" />
-                        </Button>
+
                         {/* Approval workflow actions based on status */}
                         {game.status.toUpperCase() === 'DRAFT' && (
                           <Button
