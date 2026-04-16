@@ -26,3 +26,4 @@ dist-ssr
 # IDE / AI tool configs — local only, not for version control
 .claude/
 .kiro/
+.lovable/
