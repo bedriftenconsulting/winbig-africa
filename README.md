@@ -101,7 +101,6 @@ vinne/
 | API Gateway | 4000 (HTTP) | 8080 | — | 6379 | REST API entry point |
 | Admin Management | 50057 | 8085 | 5437 | 6384 | Admin auth, RBAC |
 | Agent Auth | 50052 | — | 5434 | 6381 | Agent authentication |
-| Agent Management | 50058 | 8086 | 5435 | 6382 | Agent/retailer mgmt |
 | Game | 50053 | 8090 | 5441 | 6388 | Game configuration |
 | Draw | 50060 | 8091 | 5436 | 6383 | Draw execution, RNG |
 | Wallet | 50059 | 8087 | 5438 | 6385 | Wallet, transactions |
