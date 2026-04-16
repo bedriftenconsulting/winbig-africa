@@ -16,6 +16,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/vinne-game-assets': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   plugins: [react()],

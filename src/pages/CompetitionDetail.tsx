@@ -65,7 +65,7 @@ const CompetitionDetail = () => {
         const endsAt = g.end_date ? new Date(g.end_date)
           : g.draw_date ? new Date(g.draw_date)
           : new Date(Date.now() + 24 * 60 * 60 * 1000);
-        setComp({ id: g.id, title: g.name, image: g.image_url || g.logo_url || "",
+        setComp({ id: g.id, title: g.name, image: (g.image_url || g.logo_url || '').replace(/^https?:\/\/localhost:\d+\//, '/'),
           ticketPrice: g.base_price ?? 20, currency: g.currency || "GHS",
           totalTickets: g.total_tickets ?? 1000, soldTickets: g.sold_tickets ?? 0,
           endsAt, tag: "LIVE", description: g.description || "",

@@ -40,10 +40,14 @@ function gameToCompetition(g: Game): Competition {
   // Price: base_price is in GHS (not pesewas), ticket_price fallback in pesewas
   const priceGHS = g.base_price ?? (g.ticket_price ? g.ticket_price / 100 : 20);
 
+  // Normalise logo URL — in dev, MinIO is proxied via Vite at /vinne-game-assets
+  const rawImage = g.image_url || g.logo_url || '';
+  const image = rawImage.replace(/^https?:\/\/localhost:\d+\//, '/');
+
   return {
     id: g.id,
     title: g.name,
-    image: g.image_url || g.logo_url || '',
+    image,
     ticketPrice: priceGHS,
     currency: g.currency || 'GHS',
     totalTickets,

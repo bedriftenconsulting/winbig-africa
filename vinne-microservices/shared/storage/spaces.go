@@ -302,9 +302,7 @@ func (s *spacesStorage) getObjectURL(key string) string {
 		return fmt.Sprintf("%s/%s/%s", strings.TrimRight(s.endpoint, "/"), s.bucket, key)
 	}
 	return fmt.Sprintf("https://%s.%s/%s", s.bucket, strings.TrimPrefix(s.endpoint, "https://"), key)
-}
-
-func (s *spacesStorage) getCDNURL(key string) string {
+}func (s *spacesStorage) getCDNURL(key string) string {
 	if s.cdnEndpoint != "" {
 		return fmt.Sprintf("%s/%s", strings.TrimRight(s.cdnEndpoint, "/"), key)
 	}

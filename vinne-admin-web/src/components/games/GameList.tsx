@@ -140,6 +140,31 @@ export function GameList({
   }
 
   // Mutations for approval workflow
+  const activateGameMutation = useMutation({
+    mutationFn: (gameId: string) => gameService.activateGame(gameId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
+      toast({ title: 'Success', description: 'Game activated successfully' })
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to activate game', variant: 'destructive' })
+    },
+  })
+
+  const suspendGameMutation = useMutation({
+    mutationFn: ({ gameId, reason }: { gameId: string; reason: string }) =>
+      gameService.suspendGame(gameId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+      queryClient.invalidateQueries({ queryKey: ['games-list'] })
+      toast({ title: 'Success', description: 'Game suspended' })
+    },
+    onError: () => {
+      toast({ title: 'Error', description: 'Failed to suspend game', variant: 'destructive' })
+    },
+  })
+
   const approveGameMutation = useMutation({
     mutationFn: ({ gameId, notes }: { gameId: string; notes?: string }) =>
       gameService.approveGame(gameId, notes),
@@ -198,6 +223,25 @@ export function GameList({
     const reason = prompt('Please provide a reason for rejection:')
     if (reason) {
       rejectGameMutation.mutate({ gameId: game.id, reason })
+    }
+  }
+
+  const handleActivateGame = (game: Game) => {
+    setConfirmDialog({
+      open: true,
+      title: 'Activate Game',
+      description: `Are you sure you want to activate "${game.name}"? It will be live and available to players.`,
+      action: () => {
+        activateGameMutation.mutate(game.id)
+        setConfirmDialog(prev => ({ ...prev, open: false }))
+      },
+    })
+  }
+
+  const handleSuspendGame = (game: Game) => {
+    const reason = prompt('Please provide a reason for suspending this game:')
+    if (reason) {
+      suspendGameMutation.mutate({ gameId: game.id, reason })
     }
   }
 
@@ -367,6 +411,7 @@ export function GameList({
                             size="icon"
                             className="text-green-600 hover:text-green-700"
                             title="Activate Game"
+                            onClick={() => handleActivateGame(game)}
                           >
                             <Play className="h-4 w-4" />
                           </Button>
@@ -377,6 +422,7 @@ export function GameList({
                             size="icon"
                             className="text-orange-600 hover:text-orange-700"
                             title="Suspend Game"
+                            onClick={() => handleSuspendGame(game)}
                           >
                             <Pause className="h-4 w-4" />
                           </Button>
