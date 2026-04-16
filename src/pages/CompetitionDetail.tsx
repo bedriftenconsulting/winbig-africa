@@ -58,6 +58,10 @@ const CompetitionDetail = () => {
           setScheduleId(next.id);
           setGameCode(next.game_code || "");
           setDrawNumber(next.draw_number || 1);
+          // Update sold tickets count from the schedule's live ticket count
+          if (typeof next.sold_tickets === "number" && next.sold_tickets > 0) {
+            setComp(prev => prev ? { ...prev, soldTickets: next.sold_tickets } : prev);
+          }
         }
       }).catch(() => {});
 

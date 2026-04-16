@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gamepb "github.com/randco/randco-microservices/proto/game/v1"
+	ticketpb "github.com/randco/randco-microservices/proto/ticket/v1"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/grpc"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/response"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/router"
@@ -1538,6 +1539,9 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 		schedules = []*gamepb.GameSchedule{}
 	}
 
+	// Try to get ticket client for sold_tickets counts (best-effort, non-blocking)
+	ticketClient, _ := h.grpcManager.TicketServiceClient()
+
 	playerSchedules := make([]map[string]any, 0)
 	for _, schedule := range schedules {
 		// Only return active schedules with status "scheduled" or "in_progress"
@@ -1548,6 +1552,19 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 		status := strings.ToLower(schedule.Status)
 		if status != "scheduled" && status != "in_progress" {
 			continue
+		}
+
+		// Fetch sold ticket count for this schedule from the ticket service
+		soldTickets := int64(0)
+		if ticketClient != nil && schedule.Id != "" {
+			ticketResp, ticketErr := ticketClient.ListTickets(ctx, &ticketpb.ListTicketsRequest{
+				Filter:   &ticketpb.TicketFilter{GameScheduleId: schedule.Id},
+				Page:     1,
+				PageSize: 1,
+			})
+			if ticketErr == nil {
+				soldTickets = ticketResp.Total
+			}
 		}
 
 		scheduleMap := map[string]any{
@@ -1563,6 +1580,7 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 			"status":          schedule.Status,
 			"logo_url":        schedule.LogoUrl,
 			"brand_color":     schedule.BrandColor,
+			"sold_tickets":    soldTickets,
 		}
 
 		// Handle timestamps properly
