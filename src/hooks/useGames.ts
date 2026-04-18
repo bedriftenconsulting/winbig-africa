@@ -16,10 +16,16 @@ function nextDrawTime(drawTime: string): Date {
 }
 
 function gameToCompetition(g: Game): Competition {
-  // Resolve end time: prefer explicit end_date, else compute from draw_time
+  // Resolve end time: prefer explicit end_date combined with draw_time, else compute from draw_time
   let endsAt: Date;
   if (g.end_date) {
-    endsAt = new Date(g.end_date);
+    // Combine end_date with draw_time for accurate countdown
+    // e.g. end_date="2026-05-03" + draw_time="18:00" → "2026-05-03T18:00:00"
+    if (g.draw_time && g.draw_time.includes(':')) {
+      endsAt = new Date(`${g.end_date.split('T')[0]}T${g.draw_time}:00`);
+    } else {
+      endsAt = new Date(g.end_date);
+    }
   } else if (g.draw_date) {
     endsAt = new Date(g.draw_date);
   } else if (g.draw_time) {

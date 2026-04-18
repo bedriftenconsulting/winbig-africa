@@ -147,8 +147,22 @@ export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
     }
   }
 
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+
   const createGameMutation = useMutation({
-    mutationFn: (data: CreateGameRequest) => gameService.createGame(data),
+    mutationFn: async (data: CreateGameRequest) => {
+      // Step 1: create the game
+      const game = await gameService.createGame(data)
+      // Step 2: upload logo if one was selected
+      if (logoFile && game?.id) {
+        try {
+          await gameService.uploadGameLogo(game.id, logoFile)
+        } catch (e) {
+          console.warn('Logo upload failed, game still created', e)
+        }
+      }
+      return game
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
       queryClient.invalidateQueries({ queryKey: ['games-list'] })
@@ -171,6 +185,7 @@ export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
     form.reset()
     setCurrentStep(1)
     setLogoPreview(null)
+    setLogoFile(null)
     onClose()
   }
 
@@ -189,6 +204,7 @@ export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setLogoFile(file)
     const reader = new FileReader()
     reader.onload = ev => {
       const url = ev.target?.result as string
@@ -586,7 +602,7 @@ export function CreateGameWizard({ isOpen, onClose }: CreateGameWizardProps) {
                   <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
                   {logoPreview && (
                     <Button type="button" variant="ghost" size="sm" className="text-destructive"
-                      onClick={() => { setLogoPreview(null); form.setValue('logo_url', '') }}>
+                      onClick={() => { setLogoPreview(null); setLogoFile(null); form.setValue('logo_url', '') }}>
                       Remove logo
                     </Button>
                   )}
