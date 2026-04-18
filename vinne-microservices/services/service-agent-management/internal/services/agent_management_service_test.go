@@ -179,7 +179,7 @@ func (s *AgentManagementServiceTestSuite) TestCreateAgent() {
 		assert.Equal(s.T(), req.BusinessName, agent.BusinessName)
 		assert.Equal(s.T(), req.ContactEmail, agent.ContactEmail)
 		assert.Equal(s.T(), models.StatusUnderReview, agent.Status)
-		assert.Equal(s.T(), models.OnboardingRandLotteryLtdDirect, agent.OnboardingMethod)
+		assert.Equal(s.T(), models.OnboardingWinBigDirect, agent.OnboardingMethod)
 		s.T().Logf("✅ Agent created with code: %s", agent.AgentCode)
 	} else {
 		s.T().Log("✅ Agent creation handled by placeholder implementation")
@@ -443,7 +443,7 @@ func (s *AgentManagementServiceTestSuite) TestCreateRetailer() {
 		assert.Equal(s.T(), req.BusinessName, retailer.Name)
 		assert.Equal(s.T(), req.ContactName, retailer.OwnerName)
 		assert.Equal(s.T(), models.StatusUnderReview, retailer.Status)
-		assert.Equal(s.T(), models.OnboardingRandLotteryLtdDirect, retailer.OnboardingMethod)
+		assert.Equal(s.T(), models.OnboardingWinBigDirect, retailer.OnboardingMethod)
 		s.T().Logf("✅ Retailer created with code: %s", retailer.RetailerCode)
 	} else {
 		s.T().Log("✅ Retailer creation handled by placeholder implementation")

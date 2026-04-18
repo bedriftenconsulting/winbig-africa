@@ -121,7 +121,7 @@ func (s *agentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		BankAccountNumber:    req.BankAccountNumber,
 		BankAccountName:      req.BankAccountName,
 		Status:               models.StatusActive,                   // Start as active
-		OnboardingMethod:     models.OnboardingRandLotteryLtdDirect, // Default to direct onboarding
+		OnboardingMethod:     models.OnboardingWinBigDirect, // Default to direct onboarding
 		CommissionPercentage: commissionPercentage,
 		CreatedBy:            req.CreatedBy,
 		UpdatedBy:            req.CreatedBy,

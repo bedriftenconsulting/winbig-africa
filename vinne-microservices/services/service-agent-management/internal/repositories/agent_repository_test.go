@@ -267,7 +267,7 @@ func (s *AgentRepositoryTestSuite) TestCommissionPercentageOperations() {
 		ContactEmail:         "test@example.com",
 		ContactPhone:         "1234567890",
 		Status:               models.StatusActive,
-		OnboardingMethod:     models.OnboardingRandLotteryLtdDirect,
+		OnboardingMethod:     models.OnboardingWinBigDirect,
 		CommissionPercentage: 35.5, // 35.5% commission
 		CreatedBy:            "test-user",
 		UpdatedBy:            "test-user",

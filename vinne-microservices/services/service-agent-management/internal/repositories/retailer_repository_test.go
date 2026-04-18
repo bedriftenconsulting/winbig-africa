@@ -141,7 +141,7 @@ func (s *RetailerRepositoryTestSuite) TestGetNextRetailerCodeIndependent() {
 		City:             "Accra",
 		Region:           "Greater Accra",
 		Status:           models.StatusActive,
-		OnboardingMethod: models.OnboardingRandLotteryLtdDirect,
+		OnboardingMethod: models.OnboardingWinBigDirect,
 		CreatedBy:        "test",
 		UpdatedBy:        "test",
 	}
@@ -167,7 +167,7 @@ func (s *RetailerRepositoryTestSuite) TestGetNextRetailerCodeAgentManaged() {
 		ContactEmail:         "agent@test.com",
 		ContactPhone:         "1234567890",
 		Status:               models.StatusActive,
-		OnboardingMethod:     models.OnboardingRandLotteryLtdDirect,
+		OnboardingMethod:     models.OnboardingWinBigDirect,
 		CommissionPercentage: 30.0,
 		CreatedBy:            "test",
 		UpdatedBy:            "test",
