@@ -456,7 +456,7 @@ func (s EntityStatus) String() string {
 // IsValidOnboardingMethod checks if the onboarding method is valid
 func (o OnboardingMethod) IsValid() bool {
 	switch o {
-	case OnboardingRandLotteryLtdDirect, OnboardingAgentManaged, OnboardingReferral:
+	case OnboardingWinBigDirect, OnboardingAgentManaged, OnboardingReferral:
 		return true
 	default:
 		return false
