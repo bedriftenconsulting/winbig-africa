@@ -220,6 +220,8 @@ func (r *gameRepository) Update(ctx context.Context, game *models.Game) error {
 			number_range_min = $24, number_range_max = $25, selection_count = $26, sales_cutoff_minutes = $27,
 			base_price = $28, multi_draw_enabled = $29, max_draws_advance = $30,
 			logo_url = $31, brand_color = $32,
+			prize_details = $33, rules = $34, total_tickets = $35,
+			start_date = $36, end_date = $37,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING updated_at`
@@ -245,6 +247,8 @@ func (r *gameRepository) Update(ctx context.Context, game *models.Game) error {
 		game.NumberRangeMin, game.NumberRangeMax, game.SelectionCount, game.SalesCutoffMinutes,
 		game.BasePrice, game.MultiDrawEnabled, game.MaxDrawsAdvance,
 		game.LogoURL, game.BrandColor,
+		game.PrizeDetails, game.Rules, game.TotalTickets,
+		game.StartDate, game.EndDate,
 	).Scan(&game.UpdatedAt)
 
 	if err != nil {

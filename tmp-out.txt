@@ -1,0 +1,7 @@
+ ---> Running in 16c8047a6f34
+failed to export layer: CreateDiff: mount callback failed on /failed to apply diff: write /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1311/fs/go/pkg/mod/modernc.org/sqlite@v1.38.2/lib/sqlite_linux_386.go: no space left on device
+ff tar stream: failed to copy: /var/lib/containerd/tmpmounts/containerd-mount3038336084/go/pkg/mod/cache/vcs/0a897d51bfc9ae666ee1454be13381a5c8df2e3bb2a5bd1dba78528978aa3b56/objects/pack/pack-37abd226ba71bd56c95ed71b240253fc7b62fa79.pack: write /var/lib/containerd/io.containerd.content.v1.content/ingest/1a674430cfd79389720721443412bb8eb089080a1499fff6a34e15570f7f8577/data: no space left on device
+vinne-microservices_service-game:latest               e141f61dc552         87MB         26.6MB   U    
+vinne-microservices_service-game_1 Up 2 hours
+vinne-microservices_service-game-redis_1 Up 4 hours
+vinne-microservices_service-game-db_1 Up 4 hours
