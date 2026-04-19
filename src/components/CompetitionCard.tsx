@@ -5,12 +5,14 @@ import { useCountdown } from "@/hooks/useCountdown";
 import type { Competition } from "@/lib/competitions";
 
 const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: number }) => {
-  const { hours, minutes, seconds } = useCountdown(comp.endsAt);
+  const { days, hours, minutes, seconds } = useCountdown(comp.endsAt);
   const pct = comp.totalTickets > 0
     ? Math.round((comp.soldTickets / comp.totalTickets) * 100)
     : 0;
 
-  const timeLabel = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  const timeLabel = days > 0
+    ? `${days}d ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   return (
     <motion.div

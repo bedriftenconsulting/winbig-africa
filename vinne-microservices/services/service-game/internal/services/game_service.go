@@ -327,6 +327,30 @@ func (s *gameService) UpdateGame(ctx context.Context, req models.UpdateGameReque
 	if req.MaxDrawsAdvance != nil {
 		game.MaxDrawsAdvance = req.MaxDrawsAdvance
 	}
+	if req.PrizeDetails != nil {
+		game.PrizeDetails = req.PrizeDetails
+	}
+	if req.Rules != nil {
+		game.Rules = req.Rules
+	}
+	if req.TotalTickets != nil {
+		game.TotalTickets = *req.TotalTickets
+	}
+	// start_date/end_date: empty string explicitly clears the field (daily/weekly don't use dates)
+	if req.StartDate != nil {
+		if *req.StartDate == "" {
+			game.StartDate = nil
+		} else {
+			game.StartDate = req.StartDate
+		}
+	}
+	if req.EndDate != nil {
+		if *req.EndDate == "" {
+			game.EndDate = nil
+		} else {
+			game.EndDate = req.EndDate
+		}
+	}
 	// Note: BetTypes are updated through the game rules service, not directly here
 
 	// Validate business rules after updates

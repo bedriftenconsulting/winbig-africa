@@ -41,7 +41,7 @@ const item = {
 const HeroSection = () => {
   const { featured, loading } = useGames();
   const fallbackDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const { hours, minutes, seconds } = useCountdown(featured?.endsAt ?? fallbackDate);
+  const { days, hours, minutes, seconds } = useCountdown(featured?.endsAt ?? fallbackDate);
 
   // ALL hooks must be called before any early return
   const ref = useRef<HTMLElement>(null);
@@ -130,7 +130,10 @@ const HeroSection = () => {
           {/* 2. Countdown */}
           <motion.div variants={item} className="mb-6 w-full">
             <div className="flex items-center justify-center md:justify-start gap-1">
-              {[{ value: hours }, { value: minutes }, { value: seconds }].map((t, i) => (
+              {(days > 0
+                ? [{ value: days, label: "d" }, { value: hours }, { value: minutes }, { value: seconds }]
+                : [{ value: hours }, { value: minutes }, { value: seconds }]
+              ).map((t, i, arr) => (
                 <span key={i} className="flex items-center">
                   <motion.span
                     key={`${i}-${t.value}`}
@@ -138,9 +141,9 @@ const HeroSection = () => {
                     animate={{ opacity: 1, y: 0 }}
                     className="font-heading text-gold text-5xl md:text-6xl lg:text-7xl tabular-nums drop-shadow-[0_0_20px_hsl(44_100%_50%/0.7)]"
                   >
-                    {String(t.value).padStart(2, "0")}
+                    {String(t.value).padStart(2, "0")}{t.label ?? ""}
                   </motion.span>
-                  {i < 2 && (
+                  {i < arr.length - 1 && (
                     <motion.span
                       animate={{ opacity: [1, 0.2, 1] }}
                       transition={{ duration: 1, repeat: Infinity }}

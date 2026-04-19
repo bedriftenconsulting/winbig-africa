@@ -15,8 +15,9 @@ export function useCountdown(targetDate: Date) {
 
 function getTimeLeft(target: Date) {
   const diff = Math.max(0, target.getTime() - Date.now());
-  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
   const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-  return { hours, minutes, seconds, total: diff };
+  return { days, hours, minutes, seconds, total: diff };
 }

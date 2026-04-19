@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Calendar, Clock, DollarSign, Trophy, Users } from 'lucide-react'
 import { gameService } from '@/services/games'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, getPublicUrl } from '@/lib/utils'
 
 export const Route = createFileRoute('/game/$gameId')({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,7 +103,7 @@ function GameDetails() {
           <div className="flex items-center gap-4">
             {game.logo_url && (
               <img
-                src={game.logo_url}
+                src={getPublicUrl(game.logo_url)}
                 alt={`${game.name} logo`}
                 className="h-20 w-20 object-contain rounded-lg border-2 border-gray-200"
               />

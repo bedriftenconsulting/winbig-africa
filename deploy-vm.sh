@@ -1,0 +1,73 @@
+#!/bin/bash
+# Deploy api-gateway and service-game to the VM
+# Usage: bash deploy-vm.sh [VM_USER] [SSH_KEY_PATH]
+# Example: bash deploy-vm.sh root ~/.ssh/id_rsa
+
+VM_IP="34.121.254.209"
+VM_USER="${1:-root}"
+SSH_KEY="${2:-~/.ssh/id_rsa}"
+SSH="ssh -i $SSH_KEY -o StrictHostKeyChecking=no $VM_USER@$VM_IP"
+
+echo "=== Deploying to $VM_USER@$VM_IP ==="
+
+$SSH << 'ENDSSH'
+set -e
+cd ~/vinne/vinne-microservices
+
+echo "--- Pulling latest code ---"
+git pull
+
+echo "--- Rebuilding api-gateway ---"
+docker build -t vinne-microservices_api-gateway:latest ./services/api-gateway
+
+echo "--- Rebuilding service-game ---"
+docker build -t vinne-microservices_service-game:latest ./services/service-game
+
+echo "--- Restarting api-gateway ---"
+docker rm -f vinne-microservices_api-gateway_1 2>/dev/null || true
+docker run -d \
+  --name vinne-microservices_api-gateway_1 \
+  --network vinne-microservices_randco-net \
+  --restart unless-stopped \
+  -p 4000:4000 \
+  -e SERVER_PORT=4000 \
+  -e REDIS_HOST=redis-shared \
+  -e REDIS_PORT=6379 \
+  -e JWT_SECRET=your-super-secret-jwt-key-change-in-production \
+  -e SECURITY_JWT_ISSUER=randlotteryltd \
+  -e SECURITY_ALLOWED_ORIGINS="http://localhost:3000,http://localhost:5173,http://localhost:6176,https://winbig.bedriften.xyz,https://admin.winbig.bedriften.xyz,https://api.winbig.bedriften.xyz" \
+  -e KAFKA_BROKERS=kafka:29092 \
+  -e TRACING_ENABLED=false \
+  -e ENVIRONMENT=development \
+  -e SERVICES_ADMIN_MANAGEMENT_HOST=service-admin-management \
+  -e SERVICES_ADMIN_MANAGEMENT_PORT=51057 \
+  -e SERVICES_AGENT_AUTH_HOST=service-agent-auth \
+  -e SERVICES_AGENT_AUTH_PORT=51052 \
+  -e SERVICES_AGENT_MANAGEMENT_HOST=service-agent-management \
+  -e SERVICES_AGENT_MANAGEMENT_PORT=51056 \
+  -e SERVICES_WALLET_HOST=service-wallet \
+  -e SERVICES_WALLET_PORT=51059 \
+  -e SERVICES_GAME_HOST=service-game \
+  -e SERVICES_GAME_PORT=51053 \
+  -e SERVICES_DRAW_HOST=service-draw \
+  -e SERVICES_DRAW_PORT=51060 \
+  -e SERVICES_TICKET_HOST=service-ticket \
+  -e SERVICES_TICKET_PORT=51062 \
+  -e SERVICES_PAYMENT_HOST=service-payment \
+  -e SERVICES_PAYMENT_PORT=51061 \
+  -e SERVICES_TERMINAL_HOST=service-terminal \
+  -e SERVICES_TERMINAL_PORT=51054 \
+  -e SERVICES_NOTIFICATION_HOST=service-notification \
+  -e SERVICES_NOTIFICATION_PORT=51063 \
+  -e SERVICES_PLAYER_HOST=service-player \
+  -e SERVICES_PLAYER_PORT=51064 \
+  vinne-microservices_api-gateway:latest
+
+echo "--- Restarting service-game ---"
+docker-compose up -d --no-deps service-game
+
+echo "--- Checking containers ---"
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "api-gateway|service-game"
+
+echo "=== Deploy complete ==="
+ENDSSH

@@ -324,6 +324,11 @@ type UpdateGameRequest struct {
 	MultiDrawEnabled    *bool      `json:"multi_draw_enabled,omitempty"`
 	MaxDrawsAdvance     *int32     `json:"max_draws_advance,omitempty"`
 	WeeklySchedule      *bool      `json:"weekly_schedule,omitempty"`
+	PrizeDetails        *string    `json:"prize_details,omitempty"`
+	Rules               *string    `json:"rules,omitempty"`
+	TotalTickets        *int32     `json:"total_tickets,omitempty"`
+	StartDate           *string    `json:"start_date,omitempty"` // YYYY-MM-DD — special/monthly only
+	EndDate             *string    `json:"end_date,omitempty"`   // YYYY-MM-DD — special/monthly only
 }
 
 type CreateGameRulesRequest struct {

@@ -81,6 +81,7 @@ type CreateGameRequest struct {
 // UpdateGameRequest represents the JSON request from frontend for updating a game
 type UpdateGameRequest struct {
 	Name                *string  `json:"name,omitempty"`
+	Description         *string  `json:"description,omitempty"`
 	DrawFrequency       *string  `json:"draw_frequency,omitempty"`
 	DrawDays            []string `json:"draw_days,omitempty"`
 	DrawTime            *string  `json:"draw_time,omitempty"`
@@ -94,6 +95,11 @@ type UpdateGameRequest struct {
 	MultiDrawEnabled    *bool    `json:"multi_draw_enabled,omitempty"`
 	MaxDrawsAdvance     *int32   `json:"max_draws_advance,omitempty"`
 	WeeklySchedule      *bool    `json:"weekly_schedule,omitempty"`
+	PrizeDetails        *string  `json:"prize_details,omitempty"`
+	Rules               *string  `json:"rules,omitempty"`
+	TotalTickets        *int32   `json:"total_tickets,omitempty"`
+	StartDate           *string  `json:"start_date,omitempty"`
+	EndDate             *string  `json:"end_date,omitempty"`
 }
 
 // CreateGame creates a new game
@@ -311,6 +317,25 @@ func (h *gameHandler) UpdateGame(w http.ResponseWriter, r *http.Request) error {
 	}
 	if jsonReq.WeeklySchedule != nil {
 		protoReq.WeeklySchedule = *jsonReq.WeeklySchedule
+	}
+	if jsonReq.Description != nil {
+		protoReq.Description = *jsonReq.Description
+	}
+	if jsonReq.PrizeDetails != nil {
+		protoReq.PrizeDetails = *jsonReq.PrizeDetails
+	}
+	if jsonReq.Rules != nil {
+		protoReq.Rules = *jsonReq.Rules
+	}
+	if jsonReq.TotalTickets != nil {
+		protoReq.TotalTickets = *jsonReq.TotalTickets
+	}
+	// Always send start_date and end_date (empty string clears them on the backend)
+	if jsonReq.StartDate != nil {
+		protoReq.StartDate = *jsonReq.StartDate
+	}
+	if jsonReq.EndDate != nil {
+		protoReq.EndDate = *jsonReq.EndDate
 	}
 
 	client, err := h.grpcManager.GameServiceClient()
@@ -1333,6 +1358,10 @@ func (h *gameHandler) GetActiveGames(w http.ResponseWriter, r *http.Request) err
 			"description":            game.Description,
 			"logo_url":               game.LogoUrl,
 			"brand_color":            game.BrandColor,
+			"start_date":             game.StartDate,
+			"end_date":               game.EndDate,
+			"prize_details":          game.PrizeDetails,
+			"total_tickets":          game.TotalTickets,
 		}
 		publicGames = append(publicGames, publicGame)
 	}

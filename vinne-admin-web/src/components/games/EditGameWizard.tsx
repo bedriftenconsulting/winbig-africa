@@ -85,12 +85,13 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
 
   useEffect(() => {
     if (game) {
+      const toDateInput = (val: string | undefined) => val ? val.split('T')[0] : ''
       form.reset({
         name: game.name || '',
         description: game.description || '',
         status: (game.status as 'Draft' | 'Active' | 'Suspended') || 'Draft',
-        start_date: game.start_date || '',
-        end_date: game.end_date || '',
+        start_date: toDateInput(game.start_date),
+        end_date: toDateInput(game.end_date),
         draw_frequency: (game.draw_frequency as EditFormData['draw_frequency']) || 'daily',
         draw_time: game.draw_time || '20:00',
         draw_day: game.draw_days?.[0] || 'Friday',
@@ -108,6 +109,8 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
   const updateMutation = useMutation({
     mutationFn: async (data: EditFormData) => {
       if (!game?.id) throw new Error('No game ID')
+      // Daily and weekly don't use start/end dates — clear them on the backend
+      const needsDates = data.draw_frequency === 'special' || data.draw_frequency === 'monthly'
       return gameService.updateGame(game.id, {
         name: data.name,
         description: data.description,
@@ -118,8 +121,8 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
         draw_days: data.draw_day ? [data.draw_day] : [],
         draw_time: data.draw_time,
         sales_cutoff_minutes: data.sales_cutoff_minutes,
-        start_date: data.start_date || undefined,
-        end_date: data.end_date || undefined,
+        start_date: needsDates ? (data.start_date || undefined) : '',
+        end_date: needsDates ? (data.end_date || undefined) : '',
         prize_details: data.prize_details,
         rules: data.rules,
       })
@@ -149,6 +152,9 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
   const progress = ((currentStep - 1) / (steps.length - 1)) * 100
   const freq = form.watch('draw_frequency')
   const showDrawDay = freq === 'weekly' || freq === 'bi_weekly'
+  // Daily and weekly don't need start/end dates — they run on a recurring schedule
+  // Special (once-off) needs exact dates
+  const showDateRange = freq === 'special' || freq === 'monthly'
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -208,22 +214,24 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
             {/* ── Step 2: Dates & Tickets ── */}
             {currentStep === 2 && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="start_date" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Start Date</FormLabel>
-                      <FormControl><Input type="date" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="end_date" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Date</FormLabel>
-                      <FormControl><Input type="date" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
+                {showDateRange && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="start_date" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="end_date" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date {freq === 'special' && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="draw_frequency" render={({ field }) => (
@@ -358,8 +366,10 @@ export function EditGameWizard({ isOpen, onClose, game }: EditGameWizardProps) {
                     { label: 'Frequency',     value: form.watch('draw_frequency')?.replace('_', '-') },
                     { label: 'Draw Time',     value: form.watch('draw_time') },
                     ...(showDrawDay ? [{ label: 'Draw Day', value: form.watch('draw_day') }] : []),
-                    { label: 'Start Date',    value: form.watch('start_date') || '—' },
-                    { label: 'End Date',      value: form.watch('end_date') || '—' },
+                    ...(showDateRange ? [
+                      { label: 'Start Date', value: form.watch('start_date') || '—' },
+                      { label: 'End Date',   value: form.watch('end_date') || '—' },
+                    ] : []),
                     { label: 'Ticket Price',  value: `₵${form.watch('base_price')}` },
                     { label: 'Total Tickets', value: form.watch('total_tickets')?.toLocaleString() },
                     { label: 'Max per Player',value: form.watch('max_tickets_per_player')?.toLocaleString() },

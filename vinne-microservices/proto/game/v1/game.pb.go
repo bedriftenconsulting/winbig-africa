@@ -1351,11 +1351,17 @@ type UpdateGameRequest struct {
 	MaxTicketsPerPlayer int32                  `protobuf:"varint,8,opt,name=max_tickets_per_player,json=maxTicketsPerPlayer,proto3" json:"max_tickets_per_player,omitempty"`
 	MultiDrawEnabled    bool                   `protobuf:"varint,9,opt,name=multi_draw_enabled,json=multiDrawEnabled,proto3" json:"multi_draw_enabled,omitempty"`
 	MaxDrawsAdvance     int32                  `protobuf:"varint,10,opt,name=max_draws_advance,json=maxDrawsAdvance,proto3" json:"max_draws_advance,omitempty"`
-	StartTime           string                 `protobuf:"bytes,11,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`                 // Sales start time
-	EndTime             string                 `protobuf:"bytes,12,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`                       // Sales end time
-	MinStake            float64                `protobuf:"fixed64,13,opt,name=min_stake,json=minStake,proto3" json:"min_stake,omitempty"`                  // Minimum stake amount
-	MaxStake            float64                `protobuf:"fixed64,14,opt,name=max_stake,json=maxStake,proto3" json:"max_stake,omitempty"`                  // Maximum stake amount
-	WeeklySchedule      bool                   `protobuf:"varint,15,opt,name=weekly_schedule,json=weeklySchedule,proto3" json:"weekly_schedule,omitempty"` // Weekly schedule flag
+	StartTime           string                 `protobuf:"bytes,11,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`                         // Sales start time
+	EndTime             string                 `protobuf:"bytes,12,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`                               // Sales end time
+	MinStake            float64                `protobuf:"fixed64,13,opt,name=min_stake,json=minStake,proto3" json:"min_stake,omitempty"`                          // Minimum stake amount
+	MaxStake            float64                `protobuf:"fixed64,14,opt,name=max_stake,json=maxStake,proto3" json:"max_stake,omitempty"`                          // Maximum stake amount
+	WeeklySchedule      bool                   `protobuf:"varint,15,opt,name=weekly_schedule,json=weeklySchedule,proto3" json:"weekly_schedule,omitempty"`         // Weekly schedule flag
+	Description         string                 `protobuf:"bytes,16,opt,name=description,proto3" json:"description,omitempty"`                                      // Game description
+	PrizeDetails        string                 `protobuf:"bytes,17,opt,name=prize_details,json=prizeDetails,proto3" json:"prize_details,omitempty"`                // Prize descriptions
+	Rules               string                 `protobuf:"bytes,18,opt,name=rules,proto3" json:"rules,omitempty"`                                                  // Competition rules
+	TotalTickets        int32                  `protobuf:"varint,19,opt,name=total_tickets,json=totalTickets,proto3" json:"total_tickets,omitempty"`               // Total tickets available
+	StartDate           string                 `protobuf:"bytes,20,opt,name=start_date,json=startDate,proto3" json:"start_date,omitempty"`                         // Competition start date (YYYY-MM-DD)
+	EndDate             string                 `protobuf:"bytes,21,opt,name=end_date,json=endDate,proto3" json:"end_date,omitempty"`                               // Competition end date (YYYY-MM-DD)
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1493,6 +1499,48 @@ func (x *UpdateGameRequest) GetWeeklySchedule() bool {
 		return x.WeeklySchedule
 	}
 	return false
+}
+
+func (x *UpdateGameRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *UpdateGameRequest) GetPrizeDetails() string {
+	if x != nil {
+		return x.PrizeDetails
+	}
+	return ""
+}
+
+func (x *UpdateGameRequest) GetRules() string {
+	if x != nil {
+		return x.Rules
+	}
+	return ""
+}
+
+func (x *UpdateGameRequest) GetTotalTickets() int32 {
+	if x != nil {
+		return x.TotalTickets
+	}
+	return 0
+}
+
+func (x *UpdateGameRequest) GetStartDate() string {
+	if x != nil {
+		return x.StartDate
+	}
+	return ""
+}
+
+func (x *UpdateGameRequest) GetEndDate() string {
+	if x != nil {
+		return x.EndDate
+	}
+	return ""
 }
 
 type UpdateGameResponse struct {

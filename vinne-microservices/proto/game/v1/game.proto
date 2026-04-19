@@ -245,6 +245,12 @@ message UpdateGameRequest {
   double min_stake = 13; // Minimum stake amount
   double max_stake = 14; // Maximum stake amount
   bool weekly_schedule = 15; // Weekly schedule flag
+  string description = 16; // Game description
+  string prize_details = 17; // Prize descriptions
+  string rules = 18; // Competition rules
+  int32 total_tickets = 19; // Total tickets available
+  string start_date = 20; // Competition start date (YYYY-MM-DD) — special/monthly only
+  string end_date = 21; // Competition end date (YYYY-MM-DD) — special/monthly only
 }
 
 message UpdateGameResponse {

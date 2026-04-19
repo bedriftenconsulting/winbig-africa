@@ -86,7 +86,7 @@ const CompetitionDetail = () => {
   }, [user]);
 
   const fallbackDate = new Date(Date.now() + 3600000);
-  const { hours, minutes, seconds } = useCountdown(comp?.endsAt ?? fallbackDate);
+  const { days, hours, minutes, seconds } = useCountdown(comp?.endsAt ?? fallbackDate);
 
   // Step 1: Initiate MoMo payment
   const handleInitiatePayment = async () => {
@@ -280,7 +280,7 @@ const CompetitionDetail = () => {
   const pct = comp.totalTickets > 0 ? Math.round((comp.soldTickets / comp.totalTickets) * 100) : 0;
   const total = (qty * comp.ticketPrice).toFixed(2);
   const isSoldOut = pct >= 100;
-  const isAlmostClosed = hours === 0 && minutes < 30; // Less than 30 min left
+  const isAlmostClosed = days === 0 && hours === 0 && minutes < 30; // Less than 30 min left
 
   return (
     <div className="min-h-screen bg-background">
@@ -306,7 +306,12 @@ const CompetitionDetail = () => {
 
             {/* Countdown */}
             <div className="flex gap-3 mb-6">
-              {[{ l: "HRS", v: hours }, { l: "MIN", v: minutes }, { l: "SEC", v: seconds }].map(t => (
+              {[
+                ...(days > 0 ? [{ l: "DAYS", v: days }] : []),
+                { l: "HRS", v: hours },
+                { l: "MIN", v: minutes },
+                { l: "SEC", v: seconds },
+              ].map(t => (
                 <div key={t.l} className="bg-card border border-border rounded-lg px-3 py-2 text-center min-w-[56px]">
                   <div className="font-heading text-xl text-primary">{String(t.v).padStart(2, "0")}</div>
                   <div className="text-[10px] text-muted-foreground">{t.l}</div>

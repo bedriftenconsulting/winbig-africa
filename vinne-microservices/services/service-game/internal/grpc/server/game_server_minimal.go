@@ -232,7 +232,7 @@ func (s *GameServerMinimal) UpdateGame(ctx context.Context, req *pb.UpdateGameRe
 	serviceReq := models.UpdateGameRequest{
 		ID:                  id,
 		Name:                convertProtoStringPtr(req.Name),
-		Description:         nil, // Not in proto anymore
+		Description:         convertProtoStringPtr(req.Description),
 		DrawFrequency:       convertProtoStringPtr(req.DrawFrequency),
 		DrawDays:            req.DrawDays,
 		DrawTime:            drawTime,
@@ -246,6 +246,12 @@ func (s *GameServerMinimal) UpdateGame(ctx context.Context, req *pb.UpdateGameRe
 		MultiDrawEnabled:    convertProtoBoolPtr(req.MultiDrawEnabled),
 		MaxDrawsAdvance:     convertProtoInt32Ptr(req.MaxDrawsAdvance),
 		WeeklySchedule:      convertProtoBoolPtr(req.WeeklySchedule),
+		PrizeDetails:        convertProtoStringPtr(req.PrizeDetails),
+		Rules:               convertProtoStringPtr(req.Rules),
+		TotalTickets:        convertProtoInt32Ptr(req.TotalTickets),
+		// Pass start_date/end_date as pointers so empty string can clear the field
+		StartDate:           &req.StartDate,
+		EndDate:             &req.EndDate,
 	}
 
 	// Call service

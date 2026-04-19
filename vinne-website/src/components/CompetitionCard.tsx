@@ -1,14 +1,18 @@
 import { Link } from "react-router-dom";
-import { Clock, Plus } from "lucide-react";
+import { Clock, Plus, Trophy } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCountdown } from "@/hooks/useCountdown";
+import { useState } from "react";
 import type { Competition } from "@/lib/competitions";
 
 const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: number }) => {
-  const { hours, minutes, seconds } = useCountdown(comp.endsAt);
+  const [imgError, setImgError] = useState(false);
+  const { days, hours, minutes, seconds } = useCountdown(comp.endsAt);
   const pct = Math.round((comp.soldTickets / comp.totalTickets) * 100);
 
-  const timeLabel = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  const timeLabel = days > 0
+    ? `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`
+    : `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   return (
     <motion.div
@@ -21,15 +25,20 @@ const CompetitionCard = ({ comp, index = 0 }: { comp: Competition; index?: numbe
         to={`/competitions/${comp.id}`}
         className="group block card-light rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-shadow border border-black/8"
       >
-        <div className="relative aspect-[4/3] overflow-hidden">
-          <img
-            src={comp.image}
-            alt={comp.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            loading="lazy"
-            width={800}
-            height={600}
-          />
+        <div className="relative aspect-[4/3] overflow-hidden bg-black/80 flex items-center justify-center">
+          {comp.image && !imgError ? (
+            <img
+              src={comp.image}
+              alt={comp.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              loading="lazy"
+              width={800}
+              height={600}
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <Trophy className="h-16 w-16 text-white/20" />
+          )}
           {/* Badge — orange pill, matches reference */}
           <span className="absolute top-3 left-3 bg-[hsl(22_100%_52%)] text-white px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
             {comp.tag === "LIVE" && (

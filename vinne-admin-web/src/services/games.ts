@@ -76,8 +76,8 @@ export interface UpdateGameRequest {
   multi_draw_enabled?: boolean
   prize_details?: string
   rules?: string
-  start_date?: string
-  end_date?: string
+  start_date?: string | null
+  end_date?: string | null
 }
 
 export interface GameSchedule {
