@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "@/hooks/use-toast";
+import { API_BASE } from "@/lib/config";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "invalid credentials": "Incorrect phone number or password. Please try again.",
@@ -32,7 +33,7 @@ const SignInPage = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/players/login", {
+      const res = await fetch(`${API_BASE}/players/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number: form.phone, password: form.password, channel: "web" }),
