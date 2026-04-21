@@ -108,13 +108,17 @@ const CompCard = ({ game }: { game: ApiGame }) => {
           </div>
         </div>
 
-        {/* Button — full width gradient ad-style */}
+        {/* Button */}
         <Link to={`/competitions/${game.id}`}
-          className="w-full font-heading font-black text-base py-3.5 rounded-xl text-center text-white tracking-widest transition-all duration-300 hover:brightness-110 active:scale-[0.98]"
+          className="w-full font-heading font-black text-base py-3 rounded-xl text-center transition tracking-widest"
           style={{
-            background: "linear-gradient(90deg, #cc0000 0%, #ff4400 50%, #ff6000 100%)",
-            boxShadow: "0 4px 20px hsl(0 80% 45% / 0.4)",
+            border: "1.5px solid hsl(44 100% 52% / 0.7)",
+            color: "white",
+            background: "transparent",
+            boxShadow: "0 0 12px hsl(44 100% 52% / 0.2)",
           }}
+          onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 24px hsl(44 100% 52% / 0.5)")}
+          onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 12px hsl(44 100% 52% / 0.2)")}
         >
           ENTER NOW »
         </Link>
