@@ -13,6 +13,7 @@ import SignInPage from "./pages/SignInPage";
 import SignUpPage from "./pages/SignUpPage";
 import MyTicketsPage from "./pages/MyTicketsPage";
 import ProfilePage from "./pages/ProfilePage";
+import TopCountdownBar from "./components/TopCountdownBar";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <TopCountdownBar />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/competitions" element={<CompetitionsPage />} />
