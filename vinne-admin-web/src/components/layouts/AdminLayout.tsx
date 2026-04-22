@@ -16,6 +16,7 @@ import {
   Monitor,
   Users,
   CreditCard,
+  Phone,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -47,6 +48,7 @@ const operationsNav = [
 const commerceNav = [
   { name: 'Players', href: '/players', icon: Users },
   { name: 'Transactions', href: '/transactions', icon: CreditCard },
+  { name: 'USSD Sessions', href: '/ussd-sessions', icon: Phone },
 ]
 
 const configNav = [

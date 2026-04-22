@@ -169,7 +169,7 @@ export default function Dashboard() {
           <KPICard
             label="Tickets Sold"
             value={formatNumber(metrics.totalTickets)}
-            change={`${metrics.ticketsChange > 0 ? '+' : ''}${metrics.ticketsChange}% daily`}
+            change={`${metrics.ticketsChange > 0 ? '+' : ''}${Number(metrics.ticketsChange).toFixed(1)}% daily`}
             changeType={metrics.ticketsChange > 0 ? 'positive' : metrics.ticketsChange < 0 ? 'negative' : 'neutral'}
             icon={Ticket}
             color="sky"
@@ -177,7 +177,7 @@ export default function Dashboard() {
           <KPICard
             label="Revenue"
             value={formatCurrency(metrics.totalGrossRevenue)}
-            change={`${metrics.revenueChange > 0 ? '+' : ''}${metrics.revenueChange}% daily`}
+            change={`${metrics.revenueChange > 0 ? '+' : ''}${Number(metrics.revenueChange).toFixed(1)}% daily`}
             changeType={metrics.revenueChange > 0 ? 'positive' : metrics.revenueChange < 0 ? 'negative' : 'neutral'}
             icon={DollarSign}
             color="violet"
@@ -185,7 +185,7 @@ export default function Dashboard() {
           <KPICard
             label="Paid Wins"
             value={formatNumber(metrics.totalPaidTickets)}
-            change={`${metrics.paidTicketsChange > 0 ? '+' : ''}${metrics.paidTicketsChange}% daily`}
+            change={`${metrics.paidTicketsChange > 0 ? '+' : ''}${Number(metrics.paidTicketsChange).toFixed(1)}% daily`}
             changeType={metrics.paidTicketsChange > 0 ? 'positive' : metrics.paidTicketsChange < 0 ? 'negative' : 'neutral'}
             icon={CheckCircle}
             color="amber"
@@ -193,7 +193,7 @@ export default function Dashboard() {
           <KPICard
             label="Unpaid Wins"
             value={formatNumber(metrics.totalUnpaidTickets)}
-            change={`${metrics.unpaidTicketsChange > 0 ? '+' : ''}${metrics.unpaidTicketsChange}% daily`}
+            change={`${metrics.unpaidTicketsChange > 0 ? '+' : ''}${Number(metrics.unpaidTicketsChange).toFixed(1)}% daily`}
             changeType={metrics.unpaidTicketsChange > 0 ? 'negative' : metrics.unpaidTicketsChange < 0 ? 'positive' : 'neutral'}
             icon={XCircle}
             color="red"

@@ -42,6 +42,7 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  Star,
 } from 'lucide-react'
 import { gameService, type Game } from '@/services/games'
 import { formatInGhanaTime } from '@/lib/date-utils'
@@ -67,6 +68,9 @@ export function GameList({
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [brandingGame, setBrandingGame] = useState<Game | null>(null)
+  const [defaultGameId, setDefaultGameId] = useState<string>(
+    () => localStorage.getItem('winbig_default_game_id') || ''
+  )
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     title: string
@@ -245,6 +249,22 @@ export function GameList({
     }
   }
 
+  const handleSetDefault = async (game: Game) => {
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL?.replace('/api/v1', '')}/api/v1/config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer winbig-admin-config-2026',
+        },
+        body: JSON.stringify({ featured_game_id: game.id, featured_game_code: game.code }),
+      })
+    } catch { /* non-fatal, still update local state */ }
+    localStorage.setItem('winbig_default_game_id', game.id)
+    setDefaultGameId(game.id)
+    toast({ title: `"${game.name}" set as default hero game ⭐` })
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -339,7 +359,7 @@ export function GameList({
                 {filteredGames.map((game: Game) => (
                   <TableRow key={game.id}>
                     <TableCell className="font-medium">{game.code}</TableCell>
-                    <TableCell>{game.name}</TableCell>
+                    <TableCell>{game.name}{defaultGameId === game.id && <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 border border-yellow-300 px-1.5 py-0.5 rounded-full font-semibold">Default</span>}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
                         {getGameTypeLabel(game.game_format || game.game_category || 'competition')}
@@ -355,6 +375,15 @@ export function GameList({
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleSetDefault(game)}
+                          title="Set as default hero game"
+                          className={defaultGameId === game.id ? 'text-yellow-500' : 'text-muted-foreground hover:text-yellow-500'}
+                        >
+                          <Star className={`h-4 w-4 ${defaultGameId === game.id ? 'fill-yellow-400' : ''}`} />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"

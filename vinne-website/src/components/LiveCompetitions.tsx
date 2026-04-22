@@ -30,11 +30,24 @@ const getEndsLabel = (days: number, drawDate: Date) => {
 const useTicketsSold = (gameId: string) => {
   const [sold, setSold] = useState(0);
   useEffect(() => {
-    fetch(`${BASE}/players/games/${gameId}/schedule`)
+    fetch(`${BASE}/players/games/${gameId}/schedule`, { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
-        const s = (d?.data?.schedules ?? []).find((s: { status: string; is_active: boolean }) => s.status === "SCHEDULED" && s.is_active) ?? d?.data?.schedules?.[0];
+        const schedules = d?.data?.schedules ?? [];
+        const parseDate = (d: string | { seconds: number } | undefined): Date | null => {
+          if (!d) return null;
+          if (typeof d === "object" && "seconds" in d) return new Date(d.seconds * 1000);
+          return new Date(d as string);
+        };
+        const now = new Date();
+        const future = schedules
+          .filter((s: { status: string; scheduled_draw?: string | { seconds: number } }) =>
+            s.status === "SCHEDULED" && (parseDate(s.scheduled_draw)?.getTime() ?? 0) > now.getTime())
+          .sort((a: { scheduled_draw?: string | { seconds: number } }, b: { scheduled_draw?: string | { seconds: number } }) =>
+            (parseDate(a.scheduled_draw)?.getTime() ?? 0) - (parseDate(b.scheduled_draw)?.getTime() ?? 0));
+        const s = future[0] ?? schedules[0];
         if (s?.tickets_sold != null) setSold(s.tickets_sold);
+        else if (s?.total_tickets_sold != null) setSold(s.total_tickets_sold);
       }).catch(() => {});
   }, [gameId]);
   return sold;

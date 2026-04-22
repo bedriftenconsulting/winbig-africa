@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WinsRouteImport } from './routes/wins'
+import { Route as UssdSessionsRouteImport } from './routes/ussd-sessions'
 import { Route as TransactionsRouteImport } from './routes/transactions'
 import { Route as PlayersRouteImport } from './routes/players'
 import { Route as LoginRouteImport } from './routes/login'
@@ -39,6 +40,11 @@ import { Route as AdminAgentAgentIdRouteImport } from './routes/admin.agent.$age
 const WinsRoute = WinsRouteImport.update({
   id: '/wins',
   path: '/wins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UssdSessionsRoute = UssdSessionsRouteImport.update({
+  id: '/ussd-sessions',
+  path: '/ussd-sessions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TransactionsRoute = TransactionsRouteImport.update({
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
   '/transactions': typeof TransactionsRoute
+  '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
   '/transactions': typeof TransactionsRoute
+  '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
@@ -232,6 +240,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
   '/transactions': typeof TransactionsRoute
+  '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
@@ -262,6 +271,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/players'
     | '/transactions'
+    | '/ussd-sessions'
     | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
@@ -290,6 +300,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/players'
     | '/transactions'
+    | '/ussd-sessions'
     | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
@@ -318,6 +329,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/players'
     | '/transactions'
+    | '/ussd-sessions'
     | '/wins'
     | '/admin/agents'
     | '/admin/audit-logs'
@@ -347,6 +359,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PlayersRoute: typeof PlayersRoute
   TransactionsRoute: typeof TransactionsRoute
+  UssdSessionsRoute: typeof UssdSessionsRoute
   WinsRoute: typeof WinsRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
@@ -374,6 +387,13 @@ declare module '@tanstack/react-router' {
       path: '/wins'
       fullPath: '/wins'
       preLoaderRoute: typeof WinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ussd-sessions': {
+      id: '/ussd-sessions'
+      path: '/ussd-sessions'
+      fullPath: '/ussd-sessions'
+      preLoaderRoute: typeof UssdSessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/transactions': {
@@ -572,6 +592,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PlayersRoute: PlayersRoute,
   TransactionsRoute: TransactionsRoute,
+  UssdSessionsRoute: UssdSessionsRoute,
   WinsRoute: WinsRoute,
   AdminAgentsRoute: AdminAgentsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,

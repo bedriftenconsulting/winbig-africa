@@ -270,16 +270,30 @@ const HeroEmpty = () => (
 
 const HeroSection = () => {
   const [games, setGames] = useState<ApiGame[]>([]);
+  const [featuredId, setFeaturedId] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchActiveGames().then(setGames).catch(console.error).finally(() => setLoading(false));
+    const configUrl = "https://api.winbig.bedriften.xyz/api/v1/config";
+    Promise.all([
+      fetchActiveGames(),
+      fetch(configUrl, { cache: "no-store" }).then(r => r.json()).catch(() => ({})),
+    ])
+      .then(([g, cfg]) => {
+        setGames(g);
+        setFeaturedId(cfg?.featured_game_id || '');
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <section className="min-h-screen bg-[hsl(0_0%_4%)]" />;
   if (games.length === 0) return <HeroEmpty />;
 
-  return <HeroContent game={games[0]} />;
+  // Use admin-set featured game, fall back to first active game
+  const heroGame = (featuredId && games.find(g => g.id === featuredId)) || games[0];
+
+  return <HeroContent game={heroGame} />;
 };
 
 export default HeroSection;

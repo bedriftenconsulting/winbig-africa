@@ -82,8 +82,16 @@ const TopCountdownBar = () => {
   const [game, setGame] = useState<ApiGame | null>(null);
 
   useEffect(() => {
-    fetchActiveGames()
-      .then(games => { if (games[0]) setGame(games[0]); })
+    const configUrl = "https://api.winbig.bedriften.xyz/api/v1/config";
+    Promise.all([
+      fetchActiveGames(),
+      fetch(configUrl).then(r => r.json()).catch(() => ({})),
+    ])
+      .then(([games, cfg]) => {
+        const featuredId = cfg?.featured_game_id;
+        const hero = (featuredId && games.find((g: ApiGame) => g.id === featuredId)) || games[0];
+        if (hero) setGame(hero);
+      })
       .catch(() => {});
   }, []);
 

@@ -95,21 +95,28 @@ const playersService = {
       const res = await api.get('/admin/players/search', { params: q })
       const raw: any[] = res.data?.data?.players || res.data?.players || []
 
-      // Fetch ticket counts for all players in one bulk call
+      // Fetch ticket counts — page through all since backend caps at 10
       let ticketCountMap: Record<string, number> = {}
       let amountMap: Record<string, number> = {}
       try {
-        const ticketRes = await api.get('/admin/tickets', {
-          params: { issuer_type: 'player', page: 1, limit: 500 }
-        })
-        const tickets: any[] = ticketRes.data?.data?.tickets || ticketRes.data?.tickets || []
-        tickets.forEach((t: any) => {
-          const id = t.issuer_id || t.issuerId
-          if (id) {
-            ticketCountMap[id] = (ticketCountMap[id] || 0) + 1
-            amountMap[id] = (amountMap[id] || 0) + Number(t.total_amount || 0)
-          }
-        })
+        let pg = 1
+        while (true) {
+          let tickets: any[] = []
+          try {
+            const ticketRes = await api.get('/admin/tickets', { params: { page: pg } })
+            tickets = ticketRes.data?.data?.tickets || ticketRes.data?.tickets || []
+          } catch { break }
+          tickets.forEach((t: any) => {
+            const id = t.issuer_id || t.issuerId
+            if (id) {
+              ticketCountMap[id] = (ticketCountMap[id] || 0) + 1
+              amountMap[id] = (amountMap[id] || 0) + Number(t.total_amount || 0)
+            }
+          })
+          if (tickets.length < 10) break
+          pg++
+          if (pg > 30) break
+        }
       } catch { /* non-fatal */ }
 
       const players: Player[] = raw.map((p: any) => {

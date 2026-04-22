@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { 
   CreditCard, 
@@ -38,6 +38,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Pagination, PaginationContent, PaginationEllipsis,
+  PaginationItem, PaginationLink, PaginationNext, PaginationPrevious,
+} from '@/components/ui/pagination'
 import { formatCurrency } from '@/lib/utils'
 import { formatInGhanaTime } from '@/lib/date-utils'
 import PageHeader from '@/components/ui/page-header'
@@ -106,9 +110,7 @@ const transactionsService = {
     try {
       // Fetch player tickets as "ticket_purchase" transactions
       const q: Record<string, string> = {
-        issuer_type: 'player',
         page: String(params?.page || 1),
-        limit: String(params?.limit || 50),
       }
       if (params?.status) q.status = params.status
       if (params?.player_id) q.issuer_id = params.player_id
@@ -190,6 +192,15 @@ const transactionsService = {
   }
 }
 
+const PAGE_SIZE = 20
+
+function buildPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  if (current <= 4) return [1, 2, 3, 4, 5, 'ellipsis', total]
+  if (current >= total - 3) return [1, 'ellipsis', total - 4, total - 3, total - 2, total - 1, total]
+  return [1, 'ellipsis', current - 1, current, current + 1, 'ellipsis', total]
+}
+
 const TransactionsModule: React.FC = () => {
   
   // Filter states
@@ -200,6 +211,7 @@ const TransactionsModule: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('')
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
+  const [page, setPage] = useState(1)
 
   // Fetch transactions
   const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
@@ -258,20 +270,29 @@ const TransactionsModule: React.FC = () => {
     )
   }
 
-  const filteredTransactions = transactionsData?.transactions?.filter(transaction => {
-    if (selectedTab !== 'all' && transaction.type !== selectedTab) return false
-    if (searchFilter) {
-      const search = searchFilter.toLowerCase()
-      return (
-        transaction.transaction_id.toLowerCase().includes(search) ||
-        transaction.gateway_transaction_id.toLowerCase().includes(search) ||
-        transaction.player_name?.toLowerCase().includes(search) ||
-        transaction.retailer_name?.toLowerCase().includes(search) ||
-        transaction.description.toLowerCase().includes(search)
-      )
-    }
-    return true
-  }) || []
+  const filteredTransactions = useMemo(() => {
+    return transactionsData?.transactions?.filter(transaction => {
+      if (selectedTab !== 'all' && transaction.type !== selectedTab) return false
+      if (searchFilter) {
+        const search = searchFilter.toLowerCase()
+        return (
+          transaction.transaction_id.toLowerCase().includes(search) ||
+          transaction.gateway_transaction_id.toLowerCase().includes(search) ||
+          transaction.player_name?.toLowerCase().includes(search) ||
+          transaction.retailer_name?.toLowerCase().includes(search) ||
+          transaction.description.toLowerCase().includes(search)
+        )
+      }
+      return true
+    }) || []
+  }, [transactionsData, selectedTab, searchFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paginatedTransactions = filteredTransactions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const pageNumbers = buildPageNumbers(safePage, totalPages)
+
+  const resetPage = () => setPage(1)
 
   if (transactionsLoading) {
     return (
@@ -389,7 +410,7 @@ const TransactionsModule: React.FC = () => {
                 <Input
                   placeholder="Transaction ID, gateway ID..."
                   value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
+                  onChange={(e) => { setSearchFilter(e.target.value); resetPage() }}
                   className="pl-8"
                 />
               </div>
@@ -397,7 +418,7 @@ const TransactionsModule: React.FC = () => {
             
             <div>
               <Label>Type</Label>
-              <Select value={typeFilter || "all"} onValueChange={(value) => setTypeFilter(value === "all" ? "" : value)}>
+              <Select value={typeFilter || "all"} onValueChange={(value) => { setTypeFilter(value === "all" ? "" : value); resetPage() }}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Types" />
                 </SelectTrigger>
@@ -413,7 +434,7 @@ const TransactionsModule: React.FC = () => {
             
             <div>
               <Label>Status</Label>
-              <Select value={statusFilter || "all"} onValueChange={(value) => setStatusFilter(value === "all" ? "" : value)}>
+              <Select value={statusFilter || "all"} onValueChange={(value) => { setStatusFilter(value === "all" ? "" : value); resetPage() }}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
@@ -429,7 +450,7 @@ const TransactionsModule: React.FC = () => {
 
             <div>
               <Label>Gateway</Label>
-              <Select value={gatewayFilter || "all"} onValueChange={(value) => setGatewayFilter(value === "all" ? "" : value)}>
+              <Select value={gatewayFilter || "all"} onValueChange={(value) => { setGatewayFilter(value === "all" ? "" : value); resetPage() }}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Gateways" />
                 </SelectTrigger>
@@ -466,7 +487,7 @@ const TransactionsModule: React.FC = () => {
       </Card>
 
       {/* Transaction Tabs */}
-      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+      <Tabs value={selectedTab} onValueChange={(v) => { setSelectedTab(v); resetPage() }}>
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="all">
             All ({transactionsData?.total_count || 0})
@@ -487,14 +508,19 @@ const TransactionsModule: React.FC = () => {
 
         <TabsContent value={selectedTab} className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Transactions ({filteredTransactions.length})</CardTitle>
-              <CardDescription>
-                {selectedTab === 'all' 
-                  ? 'All transaction types across payment gateways'
-                  : `${selectedTab.replace('_', ' ')} transactions`
-                }
-              </CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Transactions ({filteredTransactions.length})</CardTitle>
+                <CardDescription>
+                  {selectedTab === 'all' 
+                    ? 'All transaction types across payment gateways'
+                    : `${selectedTab.replace('_', ' ')} transactions`
+                  }
+                </CardDescription>
+              </div>
+              <span className="text-sm text-muted-foreground shrink-0">
+                Page {safePage} of {totalPages} · showing {paginatedTransactions.length} of {filteredTransactions.length}
+              </span>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border">
@@ -513,7 +539,7 @@ const TransactionsModule: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransactions.length === 0 ? (
+                    {paginatedTransactions.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={9} className="text-center py-16">
                           <div className="flex flex-col items-center gap-4">
@@ -526,7 +552,7 @@ const TransactionsModule: React.FC = () => {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredTransactions.map((transaction) => (
+                      paginatedTransactions.map((transaction) => (
                         <TableRow key={transaction.transaction_id}>
                           <TableCell className="font-mono font-medium">
                             {transaction.transaction_id}
@@ -691,6 +717,48 @@ const TransactionsModule: React.FC = () => {
                   </TableBody>
                 </Table>
               </div>
+
+              {totalPages > 1 && (
+                <div className="mt-4">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          href="#"
+                          onClick={e => { e.preventDefault(); setPage(p => Math.max(1, p - 1)) }}
+                          aria-disabled={safePage === 1}
+                          className={safePage === 1 ? 'pointer-events-none opacity-50' : ''}
+                        />
+                      </PaginationItem>
+                      {pageNumbers.map((n, i) =>
+                        n === 'ellipsis' ? (
+                          <PaginationItem key={`ellipsis-${i}`}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        ) : (
+                          <PaginationItem key={n}>
+                            <PaginationLink
+                              href="#"
+                              isActive={n === safePage}
+                              onClick={e => { e.preventDefault(); setPage(n) }}
+                            >
+                              {n}
+                            </PaginationLink>
+                          </PaginationItem>
+                        )
+                      )}
+                      <PaginationItem>
+                        <PaginationNext
+                          href="#"
+                          onClick={e => { e.preventDefault(); setPage(p => Math.min(totalPages, p + 1)) }}
+                          aria-disabled={safePage === totalPages}
+                          className={safePage === totalPages ? 'pointer-events-none opacity-50' : ''}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

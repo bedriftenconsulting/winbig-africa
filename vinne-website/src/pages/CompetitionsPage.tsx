@@ -23,11 +23,22 @@ const GameCard = ({ game, index = 0 }: { game: ApiGame; index?: number }) => {
   const [ticketsSold, setTicketsSold] = useState<number>(0);
 
   useEffect(() => {
-    fetch(`${BASE}/players/games/${game.id}/schedule`)
+    fetch(`${BASE}/players/games/${game.id}/schedule`, { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
         const schedules = d?.data?.schedules ?? [];
-        const active = schedules.find((s: { status: string; is_active: boolean }) => s.status === "SCHEDULED" && s.is_active) ?? schedules[0];
+        const parseDate = (d: string | { seconds: number } | undefined): Date | null => {
+          if (!d) return null;
+          if (typeof d === "object" && "seconds" in d) return new Date(d.seconds * 1000);
+          return new Date(d as string);
+        };
+        const now = new Date();
+        const future = schedules
+          .filter((s: { status: string; scheduled_draw?: string | { seconds: number } }) =>
+            s.status === "SCHEDULED" && (parseDate(s.scheduled_draw)?.getTime() ?? 0) > now.getTime())
+          .sort((a: { scheduled_draw?: string | { seconds: number } }, b: { scheduled_draw?: string | { seconds: number } }) =>
+            (parseDate(a.scheduled_draw)?.getTime() ?? 0) - (parseDate(b.scheduled_draw)?.getTime() ?? 0));
+        const active = future[0] ?? schedules[0];
         if (active?.tickets_sold != null) setTicketsSold(active.tickets_sold);
         else if (active?.total_tickets_sold != null) setTicketsSold(active.total_tickets_sold);
       })

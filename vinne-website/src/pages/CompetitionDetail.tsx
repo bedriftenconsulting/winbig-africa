@@ -45,8 +45,19 @@ const CompetitionDetail = () => {
       })
       .then(schedules => {
         if (!schedules) return;
-        const s = (schedules as ApiSchedule[]).find(s => s.status === "SCHEDULED" || s.is_active)
-          ?? (schedules as ApiSchedule[])[0]
+        const list = schedules as ApiSchedule[];
+        const now = new Date();
+        const parseDate = (d: string | { seconds: number } | undefined): Date | null => {
+          if (!d) return null;
+          if (typeof d === "object" && "seconds" in d) return new Date(d.seconds * 1000);
+          return new Date(d as string);
+        };
+        // Prefer a future SCHEDULED schedule; fall back to latest by draw date
+        const future = list
+          .filter(s => s.status === "SCHEDULED" && (parseDate(s.scheduled_draw)?.getTime() ?? 0) > now.getTime())
+          .sort((a, b) => (parseDate(a.scheduled_draw)?.getTime() ?? 0) - (parseDate(b.scheduled_draw)?.getTime() ?? 0));
+        const s = future[0]
+          ?? list.sort((a, b) => (parseDate(b.scheduled_draw)?.getTime() ?? 0) - (parseDate(a.scheduled_draw)?.getTime() ?? 0))[0]
           ?? null;
         setSchedule(s);
       })
@@ -134,6 +145,20 @@ const CompetitionDetail = () => {
   const total   = (qty * price).toFixed(2);
   const maxQty  = game.max_tickets_per_player || 10;
   const hasSchedule = !!schedule;
+
+  // Check if current draw's ticket sales have closed (scheduled_end passed)
+  const parseScheduleDate = (d: string | { seconds: number } | undefined): Date | null => {
+    if (!d) return null;
+    if (typeof d === "object" && "seconds" in d) return new Date(d.seconds * 1000);
+    return new Date(d as string);
+  };
+  const scheduleEnd = parseScheduleDate(schedule?.scheduled_end);
+  const scheduleDraw = parseScheduleDate(schedule?.scheduled_draw);
+  const now = new Date();
+  const drawClosed = scheduleEnd ? now > scheduleEnd : false;
+  const nextDrawDate = scheduleDraw
+    ? scheduleDraw.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+    : null;
   const ref     = `${game.code}-${qty}TKT`;
   const timeLeft = days > 0
     ? `${days}d ${String(hours).padStart(2,"0")}h`
@@ -189,7 +214,11 @@ const CompetitionDetail = () => {
                   <div className="flex flex-wrap gap-2 justify-center mb-4">
                     {tickets.map(t => <span key={t} className="bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-md text-sm font-mono">{t}</span>)}
                   </div>
-                  <p className="text-xs text-muted-foreground mb-4">Draw in {timeLeft}</p>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    {drawClosed && nextDrawDate
+                      ? `Entered for next draw: ${nextDrawDate}`
+                      : `Draw in ${timeLeft}`}
+                  </p>
                   <Link to="/my-tickets" className="text-primary text-sm hover:underline">View My Tickets →</Link>
                 </div>
               )}
@@ -294,12 +323,25 @@ const CompetitionDetail = () => {
                     </div>
                   )}
 
+                  {hasSchedule && drawClosed && (
+                    <div className="flex items-start gap-2 text-xs bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-lg px-3 py-2.5 mb-3">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Draw sales have closed</p>
+                        <p className="text-orange-300/80 mt-0.5">
+                          Your ticket will enter the <strong>next draw</strong>
+                          {nextDrawDate ? ` on ${nextDrawDate}` : ""}.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={() => { if (!isLoggedIn) { navigate("/sign-in"); return; } setPayState("awaiting_payment"); }}
                     disabled={!hasSchedule}
                     className="w-full bg-primary text-white font-heading text-lg py-4 rounded-lg btn-glow hover:brightness-110 transition disabled:opacity-60"
                   >
-                    {!isLoggedIn ? "SIGN IN TO BUY" : "BUY TICKETS"}
+                    {!isLoggedIn ? "SIGN IN TO BUY" : drawClosed ? "BUY FOR NEXT DRAW" : "BUY TICKETS"}
                   </button>
 
                   {!isLoggedIn && (
