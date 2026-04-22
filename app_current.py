@@ -833,9 +833,10 @@ def otp_send():
     if request.method == "OPTIONS":
         return _cors(jsonify({})), 204
     data      = request.get_json(force=True, silent=True) or {}
-    player_id = data.get("player_id", "").strip()
-    channel   = data.get("channel", "phone").strip()   # "phone" or "email"
-    contact   = data.get("contact", "").strip()        # phone number or email
+    print(f"[OTP SEND] raw data: {request.data} parsed: {data}")
+    player_id = (data.get("player_id") or "").strip()
+    channel   = (data.get("channel") or "phone").strip()
+    contact   = (data.get("contact") or "").strip()
 
     if not player_id or not contact:
         return _cors(jsonify({"error": "player_id and contact required"})), 400
@@ -871,10 +872,10 @@ def otp_send():
 def otp_verify():
     if request.method == "OPTIONS":
         return _cors(jsonify({})), 204
-    data      = request.get_json(force=True, silent=True) or {}
-    player_id = data.get("player_id", "").strip()
-    channel   = data.get("channel", "phone").strip()
-    code      = data.get("code", "").strip()
+    data      = request.get_json(force=True, silent=True) or request.form or {}
+    player_id = (data.get("player_id") or "").strip()
+    channel   = (data.get("channel") or "phone").strip()
+    code      = (data.get("code") or "").strip()
 
     if not player_id or not code:
         return _cors(jsonify({"error": "player_id and code required"})), 400
