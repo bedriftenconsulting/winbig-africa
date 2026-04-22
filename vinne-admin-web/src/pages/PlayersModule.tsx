@@ -61,6 +61,8 @@ export interface Player {
   wallet_balance: number
   created_at: string
   updated_at: string
+  phone_verified?: boolean
+  email_verified?: boolean
 }
 
 export interface PlayerStatistics {
@@ -137,6 +139,8 @@ const playersService = {
           wallet_balance: p.wallet_balance || 0,
           created_at: p.created_at,
           updated_at: p.updated_at || p.created_at,
+          phone_verified: !!p.phone_verified,
+          email_verified: !!p.email_verified,
         }
       })
       return { players, total_count: res.data?.data?.total || players.length, page: 1, limit: 20 }
