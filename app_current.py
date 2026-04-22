@@ -246,7 +246,7 @@ def save_extra_entries(msisdn, qty, reference):
                 game_type   = "DRAW_ENTRY",
                 game_name   = GAME_NAME,
                 unit_price  = WINBIG_UNIT_PRICE,
-                total_amount= qty * WINBIG_UNIT_PRICE,
+                total_amount= WINBIG_UNIT_PRICE,
                 msisdn      = msisdn,
                 phone       = phone,
                 reference   = reference,
