@@ -70,8 +70,17 @@ const ProfilePage = () => {
         const p = d?.data?.profile ?? d?.data ?? d?.profile ?? d;
         setProfile(p);
         setForm({ first_name: p.first_name || "", last_name: p.last_name || "", email: p.email || "" });
-        setPhoneVerified(!!p.phone_verified || p.kyc_status === "VERIFIED");
-        setEmailVerified(!!p.email_verified);
+        // Check verification status from OTP service
+        fetch(`https://api.winbig.bedriften.xyz/api/v1/otp/status/${playerId}`)
+          .then(r => r.json())
+          .then(v => {
+            setPhoneVerified(!!v.phone_verified || !!p.phone_verified || p.kyc_status === "VERIFIED")
+            setEmailVerified(!!v.email_verified || !!p.email_verified)
+          })
+          .catch(() => {
+            setPhoneVerified(!!p.phone_verified || p.kyc_status === "VERIFIED")
+            setEmailVerified(!!p.email_verified)
+          })
       })
       .catch(() => toast({ title: "Failed to load profile", variant: "destructive" }))
       .finally(() => setLoading(false));
@@ -142,25 +151,44 @@ const ProfilePage = () => {
     }
   }
 
-  const verifyPhoneOtp = () => {
+  const verifyPhoneOtp = async () => {
     if (!phoneOtp || phoneOtp.length < 4) { toast({ title: "Enter the OTP code", variant: "destructive" }); return; }
     setVerifyingPhone(true)
-    // TODO: call backend verify endpoint — for now simulate
-    setTimeout(() => {
+    try {
+      const res = await fetch(`${OTP_BASE}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player_id: playerId, channel: "phone", code: phoneOtp }),
+      })
+      const d = await res.json()
+      if (!res.ok || d.error) throw new Error(d.error || "Verification failed")
       setPhoneVerified(true); setPhoneOtpSent(false); setPhoneOtp("")
       toast({ title: "Phone verified ✓", description: "Your phone number is now verified." })
+    } catch (e: unknown) {
+      toast({ title: "Verification failed", description: (e as Error).message, variant: "destructive" })
+    } finally {
       setVerifyingPhone(false)
-    }, 1000)
+    }
   }
 
-  const verifyEmailOtp = () => {
+  const verifyEmailOtp = async () => {
     if (!emailOtp || emailOtp.length < 4) { toast({ title: "Enter the OTP code", variant: "destructive" }); return; }
     setVerifyingEmail(true)
-    setTimeout(() => {
+    try {
+      const res = await fetch(`${OTP_BASE}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player_id: playerId, channel: "email", code: emailOtp }),
+      })
+      const d = await res.json()
+      if (!res.ok || d.error) throw new Error(d.error || "Verification failed")
       setEmailVerified(true); setEmailOtpSent(false); setEmailOtp("")
       toast({ title: "Email verified ✓", description: "Your email address is now verified." })
+    } catch (e: unknown) {
+      toast({ title: "Verification failed", description: (e as Error).message, variant: "destructive" })
+    } finally {
       setVerifyingEmail(false)
-    }, 1000)
+    }
   }
 
   const signOut = () => {
