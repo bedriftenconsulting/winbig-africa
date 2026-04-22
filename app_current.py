@@ -762,5 +762,157 @@ def home():
     return jsonify({"status": "WinBig USSD API is running"})
 
 
+
+# ---------------------------------------------------------------------------
+# OTP — Phone & Email Verification
+# ---------------------------------------------------------------------------
+
+PLAYER_REDIS = redis.Redis(host="localhost", port=6391, db=1, decode_responses=True)
+OTP_TTL      = 300   # 5 minutes
+OTP_MAX_ATTEMPTS = 3
+MNOTIFY_KEY  = "F9XhjQbbJnqKt2fy9lhPIQCSD"
+
+def _generate_otp():
+    return str(random.randint(100000, 999999))
+
+def _otp_key(player_id, channel):
+    return f"otp:{channel}:{player_id}"
+
+def _attempts_key(player_id, channel):
+    return f"otp_attempts:{channel}:{player_id}"
+
+def _send_sms_otp(phone, otp):
+    """Send OTP via mNotify SMS."""
+    local = phone.strip()
+    if local.startswith("233"):
+        local = "0" + local[3:]
+    elif local.startswith("+233"):
+        local = "0" + local[4:]
+    try:
+        resp = requests.post(
+            f"https://api.mnotify.com/api/sms/quick?key={MNOTIFY_KEY}",
+            data={
+                "recipient[]": local,
+                "sender":      "CARPARK",
+                "message":     f"Your WinBig verification code is: {otp}. Valid for 5 minutes. Do not share.",
+                "is_schedule": "false",
+                "schedule_date": "",
+            },
+            timeout=10
+        )
+        result = resp.json()
+        print(f"[OTP SMS] to={local} result={result.get('status')} code={result.get('code')}")
+        return result.get("status") == "success"
+    except Exception as e:
+        print(f"[OTP SMS ERROR] {e}")
+        return False
+
+def _update_player_verified(player_id, field):
+    """Set phone_verified or email_verified = true in player DB."""
+    try:
+        conn = psycopg2.connect(**PLAYER_DB, connect_timeout=3)
+        cur  = conn.cursor()
+        cur.execute(f"UPDATE players SET {field} = true, updated_at = NOW() WHERE id = %s", (player_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"[OTP] player {player_id} {field} set to true")
+        return True
+    except Exception as e:
+        print(f"[OTP DB ERROR] {e}")
+        return False
+
+def _cors(resp):
+    resp.headers["Access-Control-Allow-Origin"]  = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    return resp
+
+@app.route("/otp/send", methods=["POST", "OPTIONS"])
+def otp_send():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({})), 204
+    data      = request.get_json(force=True, silent=True) or {}
+    player_id = data.get("player_id", "").strip()
+    channel   = data.get("channel", "phone").strip()   # "phone" or "email"
+    contact   = data.get("contact", "").strip()        # phone number or email
+
+    if not player_id or not contact:
+        return _cors(jsonify({"error": "player_id and contact required"})), 400
+
+    # Rate limit — max 3 sends per hour
+    att_key = _attempts_key(player_id, channel)
+    attempts = int(PLAYER_REDIS.get(att_key) or 0)
+    if attempts >= OTP_MAX_ATTEMPTS:
+        ttl = PLAYER_REDIS.ttl(att_key)
+        return _cors(jsonify({"error": f"Too many attempts. Try again in {ttl//60+1} minutes."})), 429
+
+    otp = _generate_otp()
+    PLAYER_REDIS.setex(_otp_key(player_id, channel), OTP_TTL, otp)
+    pipe = PLAYER_REDIS.pipeline()
+    pipe.incr(att_key)
+    pipe.expire(att_key, 3600)
+    pipe.execute()
+
+    sent = False
+    if channel == "phone":
+        sent = _send_sms_otp(contact, otp)
+    else:
+        # Email — stub for now, log the OTP
+        print(f"[OTP EMAIL] to={contact} otp={otp} (email sending not yet configured)")
+        sent = True  # treat as sent, user won't get email yet
+
+    if sent:
+        return _cors(jsonify({"status": "sent", "channel": channel}))
+    else:
+        return _cors(jsonify({"error": "Failed to send OTP. Please try again."})), 500
+
+@app.route("/otp/verify", methods=["POST", "OPTIONS"])
+def otp_verify():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({})), 204
+    data      = request.get_json(force=True, silent=True) or {}
+    player_id = data.get("player_id", "").strip()
+    channel   = data.get("channel", "phone").strip()
+    code      = data.get("code", "").strip()
+
+    if not player_id or not code:
+        return _cors(jsonify({"error": "player_id and code required"})), 400
+
+    stored = PLAYER_REDIS.get(_otp_key(player_id, channel))
+    if not stored:
+        return _cors(jsonify({"error": "OTP expired or not found. Please request a new one."})), 400
+    if stored != code:
+        return _cors(jsonify({"error": "Incorrect code. Please try again."})), 400
+
+    # OTP correct — mark as verified in DB
+    field = "phone_verified" if channel == "phone" else "email_verified"
+    ok = _update_player_verified(player_id, field)
+    PLAYER_REDIS.delete(_otp_key(player_id, channel))
+    PLAYER_REDIS.delete(_attempts_key(player_id, channel))
+
+    if ok:
+        return _cors(jsonify({"status": "verified", "channel": channel}))
+    else:
+        return _cors(jsonify({"error": "Verified but failed to update profile. Contact support."})), 500
+
+@app.route("/otp/status/<player_id>", methods=["GET", "OPTIONS"])
+def otp_status(player_id):
+    if request.method == "OPTIONS":
+        return _cors(jsonify({})), 204
+    try:
+        conn = psycopg2.connect(**PLAYER_DB, connect_timeout=3)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT phone_verified, email_verified FROM players WHERE id = %s", (player_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return _cors(jsonify({"error": "Player not found"})), 404
+        return _cors(jsonify({"phone_verified": row["phone_verified"], "email_verified": row["email_verified"]}))
+    except Exception as e:
+        return _cors(jsonify({"error": str(e)})), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001)
