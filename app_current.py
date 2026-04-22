@@ -1,29 +1,48 @@
+import base64
 import hashlib
-import hmac
 import json
 import os
 import random
 import string
+import threading
+import time
+import uuid
 import requests
 import psycopg2
 import psycopg2.extras
+import redis
 from datetime import datetime
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-USSD_CODE        = "*899*92"
-PAYSTACK_SECRET  = "sk_live_REPLACE_WITH_YOUR_LIVE_SECRET_KEY"
-TEST_MODE        = False
-BYPASS_PAYMENT   = True   # ← set False once Paystack live account is approved
+USSD_CODE      = "*899*92"
+TEST_MODE      = False
+BYPASS_PAYMENT = False
+CHARGE_GHS_1   = True   # send GHS 1 to Hubtel regardless of ticket price (testing)
+
+# ---------------------------------------------------------------------------
+# Hubtel credentials — set via environment variables on the server
+# ---------------------------------------------------------------------------
+HUBTEL_CLIENT_ID     = os.environ.get("HUBTEL_CLIENT_ID", "")
+HUBTEL_CLIENT_SECRET = os.environ.get("HUBTEL_CLIENT_SECRET", "")
+HUBTEL_POS_SALES_ID  = os.environ.get("HUBTEL_POS_SALES_ID", "")
+HUBTEL_CALLBACK_URL  = "https://api.winbig.bedriften.xyz/payment/webhook"
+
+# Network code → Hubtel channel mapping
+NETWORK_CHANNEL = {
+    "mtn":       "mtn-gh",
+    "vodafone":  "vodafone-gh",
+    "airteltigo":"tigo-gh",
+    "airtel":    "airtel-gh",
+    "tigo":      "tigo-gh",
+}
 
 PRICES = {
     "1": {"label": "1-Day Pass",  "amount": 10000, "days": "Day 1",       "entries": 1},
     "2": {"label": "2-Day Pass",  "amount": 18000, "days": "Day 1 & 2",   "entries": 2},
 }
 WINBIG_UNIT_PRICE = 2000  # GHS 20 per extra draw entry in pesewas
-
-PAYSTACK_OK_STATUSES = {"pay_offline", "send_otp", "pending", "success"}
 
 MNOTIFY_SMS_KEY = "F9XhjQbbJnqKt2fy9lhPIQCSD"
 SMS_SENDER_ID   = "CARPARK"
@@ -42,43 +61,6 @@ TICKET_DB = {
     "user":     "ticket",
     "password": "ticket123",
 }
-
-
-PLAYER_DB = {
-    "host":     os.environ.get("PLAYER_DB_HOST", "localhost"),
-    "port":     5444,
-    "dbname":   "player_service",
-    "user":     "player",
-    "password": "player123",
-}
-
-# Cache: phone -> player_id (avoid repeated DB lookups per session)
-_player_id_cache = {}
-
-def get_player_id_for_phone(phone):
-    """Look up registered player UUID by phone. Returns None if not found."""
-    normalised = phone.strip()
-    if not normalised.startswith("+"):
-        normalised = "+" + normalised
-    if normalised in _player_id_cache:
-        return _player_id_cache[normalised]
-    try:
-        conn = psycopg2.connect(**PLAYER_DB, connect_timeout=2)
-        cur  = conn.cursor()
-        cur.execute("SELECT id FROM players WHERE phone_number = %s LIMIT 1", (normalised,))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        player_id = str(row[0]) if row else None
-        _player_id_cache[normalised] = player_id
-        if player_id:
-            print(f"[PLAYER LINK] phone={normalised} -> player_id={player_id}")
-        else:
-            print(f"[PLAYER LINK] phone={normalised} -> no account found, using USSD")
-        return player_id
-    except Exception as e:
-        print(f"[PLAYER LOOKUP ERROR] {e}")
-        return None
 
 # In-memory session state: sequenceID -> list of user inputs
 sessions = {}
@@ -108,8 +90,8 @@ def normalise_phone(phone):
 
 
 def generate_access_serial():
-    """WB-ACC-XXXXXXXX — Car Park access pass."""
-    return "WB-ACC-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    """CP-ACC-XXXXXXXX — Car Park access pass."""
+    return "CP-ACC-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
 def generate_entry_serial():
@@ -131,7 +113,7 @@ def get_ticket_conn():
 
 
 def _insert_row(cur, conn, serial, game_type, game_name, unit_price, total_amount,
-                msisdn, phone, reference, bet_lines_data, player_id=None):
+                msisdn, phone, reference, bet_lines_data):
     """Insert a single ticket row, retrying on serial collision."""
     for _ in range(5):
         try:
@@ -163,7 +145,7 @@ def _insert_row(cur, conn, serial, game_type, game_name, unit_price, total_amoun
                 DRAW_NUMBER, game_name, game_type,
                 json.dumps(bet_lines_data), 1,
                 unit_price, total_amount,
-                "player" if player_id else "USSD", player_id if player_id else msisdn,
+                "USSD", msisdn,
                 phone,
                 "mobile_money", reference, "pending",
                 security_hash, "issued", DRAW_DATE,
@@ -183,7 +165,6 @@ def save_day_pass(msisdn, ticket_key, reference):
     access_serial  = generate_access_serial()
     entry_serials  = [generate_entry_serial() for _ in range(ticket["entries"])]
 
-    player_id = get_player_id_for_phone(msisdn)
     try:
         conn = get_ticket_conn()
         cur  = conn.cursor()
@@ -200,7 +181,6 @@ def save_day_pass(msisdn, ticket_key, reference):
             phone       = phone,
             reference   = reference,
             bet_lines_data = [{"type": "ACCESS_PASS", "days": ticket["days"]}],
-            player_id   = player_id,
         )
 
         # Draw entry rows
@@ -216,7 +196,6 @@ def save_day_pass(msisdn, ticket_key, reference):
                 phone       = phone,
                 reference   = reference,
                 bet_lines_data = [{"type": "DRAW_ENTRY", "source": ticket["label"]}],
-                player_id   = player_id,
             )
 
         conn.commit()
@@ -231,9 +210,8 @@ def save_day_pass(msisdn, ticket_key, reference):
 def save_extra_entries(msisdn, qty, reference):
     """Create N draw entries for extra WinBig ticket purchase.
     Returns list of entry serials."""
-    phone     = normalise_phone(msisdn)
-    serials   = [generate_entry_serial() for _ in range(qty)]
-    player_id = get_player_id_for_phone(msisdn)
+    phone  = normalise_phone(msisdn)
+    serials = [generate_entry_serial() for _ in range(qty)]
 
     try:
         conn = get_ticket_conn()
@@ -246,12 +224,11 @@ def save_extra_entries(msisdn, qty, reference):
                 game_type   = "DRAW_ENTRY",
                 game_name   = GAME_NAME,
                 unit_price  = WINBIG_UNIT_PRICE,
-                total_amount= WINBIG_UNIT_PRICE,
+                total_amount= qty * WINBIG_UNIT_PRICE,
                 msisdn      = msisdn,
                 phone       = phone,
                 reference   = reference,
                 bet_lines_data = [{"type": "DRAW_ENTRY", "source": "Extra WinBig"}],
-                player_id   = player_id,
             )
 
         conn.commit()
@@ -377,31 +354,105 @@ def sms_extra_entries(msisdn, serials):
 # Payment
 # ---------------------------------------------------------------------------
 
-def trigger_momo_payment(msisdn, amount, sequence_id):
-    phone     = "0551234987" if TEST_MODE else normalise_phone(msisdn)
-    email     = f"{msisdn}@winbig.com"
-    reference = f"WINBIG-{msisdn}-{sequence_id}"
+def _fire_momo_async(msisdn, amount_pesewas, reference, network="mtn"):
+    """Trigger Hubtel MoMo prompt in a background thread after a short delay,
+    so the USSD session can close first."""
+    def _call():
+        time.sleep(3)
+        try:
+            result = trigger_momo_payment(msisdn, amount_pesewas, reference, network=network)
+            resp_code = result.get("ResponseCode", "?")
+            print(f"[ASYNC PAYMENT] ref={reference} network={network} "
+                  f"ResponseCode={resp_code} msg={result.get('Data', {}).get('Description', '')}")
+        except Exception as e:
+            print(f"[ASYNC PAYMENT ERROR] {e}")
+    threading.Thread(target=_call, daemon=True).start()
+
+
+def send_confirmation_sms(reference):
+    """Called by webhook after payment confirmed — looks up tickets by reference and SMSes customer."""
+    try:
+        conn = get_ticket_conn()
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT serial_number, game_type, game_name, customer_phone FROM tickets WHERE payment_ref=%s",
+            (reference,)
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            print(f"[SMS] no tickets found for ref={reference}")
+            return
+
+        msisdn  = rows[0]["customer_phone"]
+        access  = [r for r in rows if r["game_type"] == "ACCESS_PASS"]
+        entries = [r for r in rows if r["game_type"] == "DRAW_ENTRY"]
+
+        if access:
+            send_sms(
+                msisdn,
+                f"CarPark payment confirmed!\n"
+                f"Pass: {access[0]['serial_number']}\n"
+                f"Valid: {access[0]['game_name'].split('—')[-1].strip()}\n"
+                f"Draw entries: {len(entries)}\n"
+                f"Draw: 03 May 2026\nGood luck!"
+            )
+        else:
+            send_sms(
+                msisdn,
+                f"WinBig payment confirmed!\n"
+                f"{len(entries)} draw entry(ies) added.\n"
+                f"Dial *899*92 to view entries.\n"
+                f"Draw: 03 May 2026\nGood luck!"
+            )
+    except Exception as e:
+        print(f"[DB ERROR] send_confirmation_sms: {e}")
+
+
+def trigger_momo_payment(msisdn, amount_pesewas, reference, network="mtn"):
+    """Initiate a Hubtel Direct Receive Money request.
+    amount_pesewas: internal amount in pesewas (divide by 100 → GHS float for Hubtel).
+    reference: must be ≤ 36 alphanumeric chars (used as ClientReference and DB key).
+    """
+    phone      = "0551234987" if TEST_MODE else normalise_phone(msisdn)
+    amount_ghs = 1.00 if CHARGE_GHS_1 else round(amount_pesewas / 100, 2)
+    channel = NETWORK_CHANNEL.get(network.lower(), "mtn-gh")
+
+    credentials = base64.b64encode(
+        f"{HUBTEL_CLIENT_ID}:{HUBTEL_CLIENT_SECRET}".encode()
+    ).decode()
+
     payload = {
-        "email":        email,
-        "amount":       amount,
-        "currency":     "GHS",
-        "reference":    reference,
-        "mobile_money": {"phone": phone, "provider": "mtn"}
+        "Amount":             amount_ghs,
+        "Title":              "CarPark Ed. 7",
+        "Description":        "Car Park ticket / WinBig draw entry",
+        "PrimaryCallbackUrl": HUBTEL_CALLBACK_URL,
+        "ClientReference":    reference,
+        "CustomerName":       phone,
+        "CustomerMsisdn":     phone,
+        "Channel":            channel,
     }
     headers = {
-        "Authorization": f"Bearer {PAYSTACK_SECRET}",
-        "Content-Type":  "application/json"
+        "Authorization": f"Basic {credentials}",
+        "Content-Type":  "application/json",
+        "Cache-Control": "no-cache",
     }
-    resp = requests.post(
-        "https://api.paystack.co/charge",
-        json=payload, headers=headers, timeout=10
-    )
+    url = f"https://rmp.hubtel.com/merchantaccount/merchants/{HUBTEL_POS_SALES_ID}/receive/mobilemoney"
+    resp = requests.post(url, json=payload, headers=headers, timeout=15)
+    print(f"[HUBTEL] POST {url} → {resp.status_code} {resp.text[:300]}")
     return resp.json()
 
 
-def handle_day_pass(msisdn, sequence_id, ticket_key):
+def _make_reference():
+    """Generate a unique, Hubtel-safe reference (32 hex chars, ≤ 36)."""
+    return uuid.uuid4().hex  # e.g. "a3f2c1d0e4b5..."
+
+
+def handle_day_pass(msisdn, ticket_key, network="mtn"):
     ticket    = PRICES[ticket_key]
-    reference = f"WINBIG-{msisdn}-{sequence_id}"
+    reference = _make_reference()
 
     # ------------------------------------------------------------------
     # BYPASS MODE
@@ -422,60 +473,24 @@ def handle_day_pass(msisdn, sequence_id, ticket_key):
         )
 
     # ------------------------------------------------------------------
-    # LIVE MODE
+    # LIVE MODE — save tickets immediately, fire MoMo in background
     # ------------------------------------------------------------------
-    try:
-        api_result = trigger_momo_payment(msisdn, ticket["amount"], sequence_id)
-        data       = api_result.get("data", {})
-        status     = data.get("status", "")
-
-        if api_result.get("status") and status in PAYSTACK_OK_STATUSES:
-            result = save_day_pass(msisdn, ticket_key, reference)
-
-            if status == "success":
-                update_payment_status(reference, "completed")
-                sms_day_pass(msisdn, ticket, result)
-            else:
-                send_sms(
-                    msisdn,
-                    f"CarPark payment pending.\n"
-                    f"Pass: {result['access']}\n"
-                    f"Enter your MoMo PIN to confirm.\n"
-                    f"Draw: 03 May 2026"
-                )
-
-            entries_display = "\r\n".join(result["entries"])
-            if status == "success":
-                return (
-                    f"Payment successful!\r\n"
-                    f"Pass: {result['access']}\r\n"
-                    f"({ticket['days']})\r\n\r\n"
-                    f"Draw Entries:\r\n{entries_display}\r\n\r\n"
-                    f"Good luck!",
-                    True
-                )
-            else:
-                return (
-                    "MoMo prompt sent!\r\n"
-                    "Enter your PIN on\r\n"
-                    "your phone to complete\r\n"
-                    "payment.\r\n\r\n"
-                    "You will receive an\r\n"
-                    "SMS once confirmed.",
-                    True
-                )
-        else:
-            msg = data.get("message") or api_result.get("message", "Payment failed.")
-            return (f"Payment failed:\r\n{msg}\r\n\r\nPlease try again.", True)
-
-    except Exception as e:
-        print(f"[PAYMENT ERROR] {e}")
-        return ("Payment unavailable.\r\nPlease try again later.", True)
+    result = save_day_pass(msisdn, ticket_key, reference)
+    _fire_momo_async(msisdn, ticket["amount"], reference, network=network)
+    return (
+        f"Processing payment...\r\n"
+        f"{ticket['label']} - GHS {ticket['amount'] // 100}\r\n\r\n"
+        "Enter MoMo PIN when\r\n"
+        "prompted.\r\n\r\n"
+        "Ticket details will\r\n"
+        "be sent via SMS.",
+        True
+    )
 
 
-def handle_extra_entries(msisdn, sequence_id, qty):
+def handle_extra_entries(msisdn, qty, network="mtn"):
     amount    = qty * WINBIG_UNIT_PRICE
-    reference = f"WINBIG-{msisdn}-{sequence_id}"
+    reference = _make_reference()
 
     # ------------------------------------------------------------------
     # BYPASS MODE
@@ -495,49 +510,20 @@ def handle_extra_entries(msisdn, sequence_id, qty):
         )
 
     # ------------------------------------------------------------------
-    # LIVE MODE
+    # LIVE MODE — save entries immediately, fire MoMo in background
     # ------------------------------------------------------------------
-    try:
-        api_result = trigger_momo_payment(msisdn, amount, sequence_id)
-        data       = api_result.get("data", {})
-        status     = data.get("status", "")
-
-        if api_result.get("status") and status in PAYSTACK_OK_STATUSES:
-            serials = save_extra_entries(msisdn, qty, reference)
-
-            if status == "success":
-                update_payment_status(reference, "completed")
-                sms_extra_entries(msisdn, serials)
-                entries_display = "\r\n".join(serials)
-                return (
-                    f"Payment successful!\r\n"
-                    f"{qty} Draw Entry(ies):\r\n"
-                    f"{entries_display}\r\n\r\n"
-                    f"Good luck!",
-                    True
-                )
-            else:
-                send_sms(
-                    msisdn,
-                    f"WinBig entries pending payment.\n"
-                    f"Enter your MoMo PIN to confirm.\n"
-                    f"Draw: 03 May 2026"
-                )
-                return (
-                    "MoMo prompt sent!\r\n"
-                    "Enter your PIN to\r\n"
-                    "complete payment.\r\n\r\n"
-                    "You will get an SMS\r\n"
-                    "once confirmed.",
-                    True
-                )
-        else:
-            msg = data.get("message") or api_result.get("message", "Payment failed.")
-            return (f"Payment failed:\r\n{msg}\r\n\r\nPlease try again.", True)
-
-    except Exception as e:
-        print(f"[PAYMENT ERROR] {e}")
-        return ("Payment unavailable.\r\nPlease try again later.", True)
+    serials = save_extra_entries(msisdn, qty, reference)
+    _fire_momo_async(msisdn, amount, reference, network=network)
+    return (
+        f"Processing payment...\r\n"
+        f"{qty} WinBig Entry(ies)\r\n"
+        f"GHS {qty * 20}\r\n\r\n"
+        "Enter MoMo PIN when\r\n"
+        "prompted.\r\n\r\n"
+        "Ticket details will\r\n"
+        "be sent via SMS.",
+        True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -617,10 +603,10 @@ def ussd():
 
     # ---- Day pass payments ----
     elif text == "1*1*1":
-        msg, end = handle_day_pass(msisdn, sequence_id, "1")
+        msg, end = handle_day_pass(msisdn, "1", network=network)
         return resp(msg, end)
     elif text == "1*2*1":
-        msg, end = handle_day_pass(msisdn, sequence_id, "2")
+        msg, end = handle_day_pass(msisdn, "2", network=network)
         return resp(msg, end)
     elif text in ["1*1*0", "1*2*0"]:
         return resp("Transaction cancelled.\r\n\r\n1. Buy Ticket\r\n0. Back", end=True)
@@ -656,7 +642,7 @@ def ussd():
             elif action == "1":
                 if not qty_str.isdigit() or int(qty_str) < 1:
                     return resp("Invalid number.\r\nPlease try again.", end=True)
-                msg, end = handle_extra_entries(msisdn, sequence_id, int(qty_str))
+                msg, end = handle_extra_entries(msisdn, int(qty_str), network=network)
                 return resp(msg, end)
             else:
                 return resp("Invalid choice.\r\nPlease try again.")
@@ -739,93 +725,41 @@ def ussd():
 
 
 # ---------------------------------------------------------------------------
-# Paystack webhook
+# Hubtel webhook
 # ---------------------------------------------------------------------------
 
 @app.route("/payment/webhook", methods=["POST"])
 def payment_webhook():
-    signature = request.headers.get("x-paystack-signature", "")
-    body      = request.get_data()
-    expected  = hmac.new(
-        PAYSTACK_SECRET.encode("utf-8"),
-        body,
-        hashlib.sha512
-    ).hexdigest()
+    """Hubtel calls this URL after a payment attempt completes.
+    ResponseCode "0000" = success, "2001" = failed/cancelled.
+    """
+    event = request.get_json(force=True, silent=True) or {}
+    print(f"[WEBHOOK] {event}")
 
-    if signature != expected:
-        return jsonify({"status": "unauthorized"}), 401
+    data          = event.get("Data", {})
+    response_code = event.get("ResponseCode", "")
+    reference     = data.get("ClientReference", "")
+    amount        = data.get("Amount", 0)
+    phone         = data.get("CustomerMsisdn", "")
 
-    event      = request.get_json(force=True, silent=True) or {}
-    event_type = event.get("event", "")
-
-    if event_type == "charge.success":
-        data      = event.get("data", {})
-        reference = data.get("reference", "")
-        amount    = data.get("amount", 0) / 100
-        phone     = data.get("authorization", {}).get("mobile_money_number", "")
+    if response_code == "0000":
+        # Payment successful
         print(f"[PAYMENT SUCCESS] ref={reference} amount=GHS{amount} phone={phone}")
         update_payment_status(reference, "completed")
+        send_confirmation_sms(reference)
+    elif response_code == "2001":
+        # Payment failed or cancelled by user
+        print(f"[PAYMENT FAILED] ref={reference} code={response_code}")
+        update_payment_status(reference, "failed")
+    else:
+        print(f"[PAYMENT PENDING/OTHER] ref={reference} code={response_code}")
 
     return jsonify({"status": "ok"}), 200
-
-
-@app.route("/payment/callback", methods=["GET", "POST"])
-def payment_callback():
-    reference = request.values.get("reference", "")
-    return jsonify({"status": "received", "reference": reference}), 200
 
 
 @app.route("/")
 def home():
     return jsonify({"status": "WinBig USSD API is running"})
-
-
-# ---------------------------------------------------------------------------
-# Featured game config — admin sets via POST, website reads via GET
-# ---------------------------------------------------------------------------
-
-import threading
-_config_lock = threading.Lock()
-_config_file = os.path.join(os.path.dirname(__file__), "config.json")
-
-def _read_config():
-    try:
-        with open(_config_file, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def _write_config(data):
-    with _config_lock:
-        with open(_config_file, "w") as f:
-            json.dump(data, f)
-
-@app.route("/config", methods=["GET", "OPTIONS"])
-def get_config():
-    if request.method == "OPTIONS":
-        resp = jsonify({})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
-        return resp, 204
-    cfg = _read_config()
-    resp = jsonify(cfg)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
-
-@app.route("/config", methods=["POST"])
-def set_config():
-    # Simple token auth — only admin can set
-    auth = request.headers.get("Authorization", "")
-    if auth != "Bearer winbig-admin-config-2026":
-        return jsonify({"error": "unauthorized"}), 401
-    data = request.get_json(force=True, silent=True) or {}
-    cfg = _read_config()
-    cfg.update(data)
-    _write_config(cfg)
-    resp = jsonify({"status": "ok", "config": cfg})
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
 
 
 if __name__ == "__main__":
