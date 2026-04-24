@@ -114,6 +114,16 @@ export default function UssdSessions() {
     return result
   }, [allTickets, gameTypeFilter, paymentStatusFilter, search])
 
+  // Combined amount per (payment_ref, game_type) — used in Amount column
+  const typeAmountMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of allTickets) {
+      const key = `${t.payment_ref}|${t.game_type}`
+      map.set(key, (map.get(key) || 0) + Number(t.unit_price || 0))
+    }
+    return map
+  }, [allTickets])
+
   // Reset to page 1 when filters change
   const handleFilter = (setter: (v: string) => void) => (v: string) => {
     setter(v)
@@ -295,7 +305,7 @@ export default function UssdSessions() {
                         <TableCell>{typeBadge(ticket)}</TableCell>
                         <TableCell className="text-sm max-w-[160px] truncate">{ticket.game_name}</TableCell>
                         <TableCell className="font-semibold">
-                          {ticket.unit_price > 0 ? formatCurrency(Number(ticket.unit_price)) : '—'}
+                          {formatCurrency(typeAmountMap.get(`${ticket.payment_ref}|${ticket.game_type}`) || 0)}
                         </TableCell>
                         <TableCell>{statusBadge(ticket.payment_status)}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground max-w-[140px] truncate">
@@ -320,7 +330,7 @@ export default function UssdSessions() {
                                 <div><Label>Payment Status</Label><div className="mt-1">{statusBadge(ticket.payment_status)}</div></div>
                                 <div><Label>Game</Label><p>{ticket.game_name}</p></div>
                                 <div><Label>Game Code</Label><p className="font-mono">{ticket.game_code}</p></div>
-                                <div><Label>Amount</Label><p className="font-bold text-base">{formatCurrency(Number(ticket.unit_price))}</p></div>
+                                <div><Label>Amount ({ticket.game_type === 'ACCESS_PASS' ? 'Access Pass total' : 'Draw Entry total'})</Label><p className="font-bold text-base">{formatCurrency(typeAmountMap.get(`${ticket.payment_ref}|${ticket.game_type}`) || 0)}</p></div>
                                 <div><Label>Payment Method</Label><p className="capitalize">{ticket.payment_method?.replace('_', ' ')}</p></div>
                                 <div className="col-span-2"><Label>Payment Reference</Label><p className="font-mono text-xs break-all">{ticket.payment_ref}</p></div>
                                 <div><Label>Draw Date</Label><p>{ticket.draw_date}</p></div>
