@@ -74,6 +74,16 @@ function AppSidebar() {
   const { state } = useSidebar()
   const collapsed = state === 'collapsed'
 
+  // Role-based access
+  const userRoles = user?.roles?.map(r => r.name.toLowerCase()) || []
+  const isSuperAdmin = userRoles.includes('super_admin') || userRoles.includes('admin')
+  const isCommerceManager = userRoles.includes('commerce_manager')
+  // Commerce manager sees only Commerce, everyone else sees everything
+  const showOperations = isSuperAdmin || (!isCommerceManager)
+  const showCommerce = true // everyone sees commerce
+  const showAdmin = isSuperAdmin
+  const showComingSoon = isSuperAdmin
+
   const isActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(href + '/')
 
@@ -124,65 +134,73 @@ function AppSidebar() {
 
       <SidebarContent className="px-2 py-3">
         {/* Operations */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
-            Operations
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {operationsNav.map(item => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {showOperations && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
+              Operations
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {operationsNav.map(item => (
+                  <NavItem key={item.name} item={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Commerce */}
-        <SidebarGroup className="pt-4">
-          <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
-            Commerce
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {commerceNav.map(item => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {showCommerce && (
+          <SidebarGroup className={showOperations ? "pt-4" : ""}>
+            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
+              Commerce
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {commerceNav.map(item => (
+                  <NavItem key={item.name} item={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Administration */}
-        <SidebarGroup className="pt-4">
-          <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
-            Administration
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminNav.map(item => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {showAdmin && (
+          <SidebarGroup className="pt-4">
+            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
+              Administration
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNav.map(item => (
+                  <NavItem key={item.name} item={item} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Coming Soon */}
-        <SidebarGroup className="pt-4">
-          <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
-            Coming Soon
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {comingSoonNav.map(item => (
-                <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton disabled tooltip={item.name} className="opacity-40 cursor-not-allowed">
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    <span>{item.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {showComingSoon && (
+          <SidebarGroup className="pt-4">
+            <SidebarGroupLabel className="text-[10px] font-semibold uppercase tracking-[0.1em] text-sidebar-muted px-3 mb-1">
+              Coming Soon
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {comingSoonNav.map(item => (
+                  <SidebarMenuItem key={item.name}>
+                    <SidebarMenuButton disabled tooltip={item.name} className="opacity-40 cursor-not-allowed">
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span>{item.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       {/* User footer */}
