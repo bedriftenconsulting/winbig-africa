@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import string
 import threading
 import time
@@ -48,8 +49,8 @@ PRICES = {
         "label":              "2-Day Pass",
         "amount":             18000,          # GHS 180 — total charged to customer
         "days":               [("Day 1", "02/05/2026"), ("Day 2", "03/05/2026")],
-        "access_unit_price":  8000,           # GHS 80 net per ACCESS_PASS per day (sent to admin)
-        "entry_unit_price":   1000,           # GHS 10 per included DRAW_ENTRY (2 × 10 = GHS 20)
+        "access_unit_price":  7000,           # GHS 70 net per ACCESS_PASS per day
+        "entry_unit_price":   2000,           # GHS 20 per included DRAW_ENTRY (2 × 20 = GHS 40)
     },
 }
 WINBIG_UNIT_PRICE = 2000  # GHS 20 per extra draw entry in pesewas
@@ -97,6 +98,9 @@ WALLET_DB = {
 
 # In-memory session state: sequenceID -> list of user inputs
 sessions = {}
+
+# MSISDN -> active sequenceID (fallback when gateway changes seq mid-session)
+sessions_by_msisdn = {}
 
 # Idempotency guard: session_id -> payment_ref
 # Prevents duplicate ticket creation if the USSD gateway retries the same step
@@ -902,15 +906,36 @@ def ussd():
 
     print(f"[REQUEST] msisdn={msisdn} seq={sequence_id} data={repr(raw_data)} net={network}")
 
+    # ── Telecel/gateway session-end signal ─────────────────────────────
+    if raw_data.lower() == "release":
+        sessions.pop(sequence_id, None)
+        sessions_by_msisdn.pop(msisdn, None)
+        print(f"[RELEASE] msisdn={msisdn} seq={sequence_id}")
+        return ussd_response(msisdn, sequence_id, "Session ended.", end=True)
+
+    # Hubtel gateway error codes look like '03020340-UNKNOWN_ERROR' — not user input
+    _GATEWAY_ERR = bool(re.match(r'^[0-9A-Fa-f]+-[A-Z_]+$', raw_data))
+
     is_initial = (raw_data == USSD_CODE or raw_data.startswith(USSD_CODE + "*"))
 
     if is_initial:
         prefix = USSD_CODE + "*"
         text   = "" if raw_data == USSD_CODE else raw_data[len(prefix):]
         sessions[sequence_id] = text.split("*") if text else []
+        sessions_by_msisdn[msisdn] = sequence_id
     else:
+        # ── MSISDN fallback: Telecel may change sequenceID mid-session ─
+        existing_seq = sessions_by_msisdn.get(msisdn)
+        if existing_seq and existing_seq != sequence_id and sequence_id not in sessions:
+            old_history = sessions.pop(existing_seq, [])
+            sessions[sequence_id] = old_history
+            sessions_by_msisdn[msisdn] = sequence_id
+            print(f"[SESSION MIGRATE] msisdn={msisdn} {existing_seq} -> {sequence_id}")
+
         history = sessions.get(sequence_id, [])
-        if raw_data:
+        if _GATEWAY_ERR:
+            print(f"[GATEWAY ERROR] ignored: {repr(raw_data)}")
+        elif raw_data:
             history.append(raw_data)
         sessions[sequence_id] = history
         text = "*".join(history)
@@ -920,6 +945,7 @@ def ussd():
     def resp(message, end=False):
         if end:
             sessions.pop(sequence_id, None)
+            sessions_by_msisdn.pop(msisdn, None)
         return ussd_response(msisdn, sequence_id, message, end)
 
     # ---- Main menu ----
