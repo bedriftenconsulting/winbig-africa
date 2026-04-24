@@ -74,11 +74,19 @@ function AppSidebar() {
   const { state } = useSidebar()
   const collapsed = state === 'collapsed'
 
-  // Role-based access
-  // commerce_manager or manager role = Commerce only
-  // everyone else (super_admin, admin, support, viewer) = sees everything
-  const userRoles = user?.roles?.map(r => r.name.toLowerCase()) || []
-  console.log('[AdminLayout] user roles:', userRoles)
+  // Role-based access — read from JWT token since user.roles may be empty
+  const getRolesFromToken = (): string[] => {
+    try {
+      const token = localStorage.getItem('access_token')
+      if (!token) return []
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return (payload.roles || []).map((r: { name?: string } | string) =>
+        typeof r === 'string' ? r.toLowerCase() : (r.name || '').toLowerCase()
+      )
+    } catch { return [] }
+  }
+  const userRoles = getRolesFromToken()
+  console.log('[AdminLayout] user roles from token:', userRoles)
   const isCommerceOnly = userRoles.length > 0 &&
     userRoles.every(r => r === 'commerce_manager' || r === 'manager')
   console.log('[AdminLayout] isCommerceOnly:', isCommerceOnly)
