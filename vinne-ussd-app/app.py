@@ -505,11 +505,12 @@ def send_winbig_sms(reference):
         print(f"[SMS] {len(chunks)} chunk(s) for ref={reference} to={msisdn}")
         for j, chunk in enumerate(chunks):
             entries_text = "\n".join(chunk)
+            label = "Entry" if len(chunk) == 1 else "Entries"
             ok = send_sms(
                 msisdn,
-                f"CarPark Ed. 7 payment confirmed!\n"
-                f"WinBig Entries:\n{entries_text}\n"
-                f"Draw: {DRAW_DATE_LABEL}"
+                f"WinBig {label}:\n{entries_text}\n"
+                f"CarPark Ed. 7 Draw: {DRAW_DATE_LABEL}\n"
+                f"Good luck!"
             )
             if not ok:
                 all_sent = False
