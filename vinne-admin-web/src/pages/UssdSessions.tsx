@@ -140,16 +140,24 @@ export default function UssdSessions() {
   // Stats (always from full unfiltered set)
   // game_type may not come from API — use serial prefix as fallback
   const isAccessPass = (t: UssdTicket) =>
-    t.game_type === 'ACCESS_PASS' || t.serial_number?.startsWith('CP-ACC-')
+    t.game_type === 'ACCESS_PASS' || 
+    t.serial_number?.startsWith('CP-ACC-') ||
+    t.serial_number?.startsWith('WB-ACC-')
   const isDrawEntry = (t: UssdTicket) =>
-    t.game_type === 'DRAW_ENTRY' || t.serial_number?.startsWith('WB-ENT-')
+    t.game_type === 'DRAW_ENTRY' || 
+    t.serial_number?.startsWith('CP-ENT-') ||
+    t.serial_number?.startsWith('WB-ENT-')
 
   const uniquePhones = new Set(allTickets.map(t => t.customer_phone)).size
   const accessPasses = allTickets.filter(isAccessPass)
   const drawEntries = allTickets.filter(isDrawEntry)
-  const completed = allTickets.filter(t => t.payment_status === 'completed')
-  // total_amount is in pesewas — divide by 100 for GHS
-  const totalRevenue = allTickets.filter(t => t.payment_status === 'completed').reduce((sum, t) => sum + Number(t.unit_price || 0), 0)
+  const completed = allTickets.filter(t => 
+    t.payment_status === 'completed' || 
+    t.payment_status?.toLowerCase().includes('completed')
+  )
+  const totalRevenue = completed
+    .filter(isAccessPass)
+    .reduce((sum, t) => sum + Number(t.unit_price || 0), 0)
 
   return (
     <div className="space-y-6">
