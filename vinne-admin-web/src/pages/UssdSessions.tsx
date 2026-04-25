@@ -50,13 +50,24 @@ async function fetchUssdTickets(): Promise<UssdTicket[]> {
     let page = 1
     let all: UssdTicket[] = []
     while (true) {
-      const res = await api.get('/ussd/tickets', { params: { page, limit: 200 } })
-      const batch: UssdTicket[] = res.data?.data || []
+      let batch: UssdTicket[] = []
+      try {
+        const res = await api.get('/admin/tickets', { params: { page: String(page) } })
+        batch = res.data?.data?.tickets || res.data?.tickets || []
+      } catch { break }
       all = [...all, ...batch]
-      if (batch.length < 200 || page >= (res.data?.pages ?? 1)) break
+      if (batch.length < 10) break
       page++
+      if (page > 30) break
     }
-    return all
+    return all.filter(
+      t =>
+        t.issuer_type === 'USSD' ||
+        t.serial_number?.startsWith('WB-ACC-') ||
+        t.serial_number?.startsWith('WB-ENT-') ||
+        t.serial_number?.startsWith('CP-ACC-') ||
+        t.serial_number?.startsWith('CP-ENT-'),
+    )
   } catch {
     return []
   }
