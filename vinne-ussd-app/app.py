@@ -1003,11 +1003,21 @@ def ussd():
     # Hubtel gateway error codes e.g. '03020340-UNKNOWN_ERROR' -- not user input
     _GATEWAY_ERR = bool(re.match(r'^[0-9A-Fa-f]+-[A-Z_]+$', raw_data))
 
-    is_initial = (raw_data == USSD_CODE or raw_data.startswith(USSD_CODE + "*"))
+    # AirtelTigo omits the leading '*' and sends '899*92' instead of '*899*92'
+    USSD_CODE_BARE = USSD_CODE.lstrip("*")
+    is_initial = (
+        raw_data in (USSD_CODE, USSD_CODE_BARE) or
+        raw_data.startswith(USSD_CODE + "*") or
+        raw_data.startswith(USSD_CODE_BARE + "*")
+    )
 
     if is_initial:
-        prefix = USSD_CODE + "*"
-        text   = "" if raw_data == USSD_CODE else raw_data[len(prefix):]
+        for prefix in (USSD_CODE + "*", USSD_CODE_BARE + "*"):
+            if raw_data.startswith(prefix):
+                text = raw_data[len(prefix):]
+                break
+        else:
+            text = ""
         sessions[sequence_id] = text.split("*") if text else []
         sessions_by_msisdn[msisdn] = sequence_id
     else:
@@ -1019,13 +1029,22 @@ def ussd():
             sessions_by_msisdn[msisdn] = sequence_id
             print(f"[SESSION MIGRATE] msisdn={msisdn} {existing_seq} -> {sequence_id}")
 
-        history = sessions.get(sequence_id, [])
-        if _GATEWAY_ERR:
-            print(f"[GATEWAY ERROR] ignored: {repr(raw_data)}")
-        elif raw_data:
-            history.append(raw_data)
-        sessions[sequence_id] = history
-        text = "*".join(history)
+        # Use sentinel None to distinguish "no session" from "empty session"
+        history = sessions.get(sequence_id)
+        if history is None:
+            # No session at all — non-standard initial data from this network,
+            # start fresh and show the main menu
+            print(f"[NEW SESSION] no session for seq={sequence_id} net={network} raw={repr(raw_data)}")
+            sessions[sequence_id] = []
+            sessions_by_msisdn[msisdn] = sequence_id
+            text = ""
+        else:
+            if _GATEWAY_ERR:
+                print(f"[GATEWAY ERROR] ignored: {repr(raw_data)}")
+            elif raw_data:
+                history.append(raw_data)
+            sessions[sequence_id] = history
+            text = "*".join(history)
 
     print(f"[SESSION] seq={sequence_id} text={repr(text)}")
 
