@@ -935,13 +935,11 @@ def handle_buy_entries(session_id, msisdn, qty, network="mtn"):
     _fire_momo_async(msisdn, amount, result["reference"], network=network)
     return (
         f"Processing payment...\r\n"
-        f"{qty} WinBig Entr{'y' if qty == 1 else 'ies'}\r\n"
-        f"GHS {qty * 20}\r\n"
-        "\r\n"
-        "Enter PIN when prompted.\r\n"
-        "Go to My Approvals if\r\n"
-        "payment prompt delays.\r\n"
-        "SMS with entries.",
+        f"{qty} Entr{'y' if qty == 1 else 'ies'} GHS {qty * 20}\r\n"
+        "Approve MoMo prompt.\r\n"
+        "Check My Approvals if\r\n"
+        "prompt delays.\r\n"
+        "Entries sent by SMS.",
         True,
     )
 
@@ -1041,9 +1039,8 @@ def ussd():
     if text == "":
         return resp(
             "CarPark Ed. 7 -- WinBig\r\n"
-            "Buy entries & stand a\r\n"
-            "chance to win an\r\n"
-            "iPhone 17 Pro\r\n\r\n"
+            "Win an iPhone 17 Pro\r\n"
+            "\r\n"
             "1. Buy WinBig Entries\r\n"
             "2. My Entries\r\n"
             "3. Help\r\n"
@@ -1129,9 +1126,8 @@ def ussd():
         # "0. Back" -- return to main menu
         return resp(
             "CarPark Ed. 7 -- WinBig\r\n"
-            "Buy entries & stand a\r\n"
-            "chance to win an\r\n"
-            "iPhone 17 Pro\r\n\r\n"
+            "Win an iPhone 17 Pro\r\n"
+            "\r\n"
             "1. Buy WinBig Entries\r\n"
             "2. My Entries\r\n"
             "3. Help\r\n"
@@ -1150,9 +1146,8 @@ def ussd():
     elif text == "3*0":
         return resp(
             "CarPark Ed. 7 -- WinBig\r\n"
-            "Buy entries & stand a\r\n"
-            "chance to win an\r\n"
-            "iPhone 17 Pro\r\n\r\n"
+            "Win an iPhone 17 Pro\r\n"
+            "\r\n"
             "1. Buy WinBig Entries\r\n"
             "2. My Entries\r\n"
             "3. Help\r\n"
