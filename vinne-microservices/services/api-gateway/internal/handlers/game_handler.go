@@ -1375,9 +1375,9 @@ func (h *gameHandler) GetActiveGames(w http.ResponseWriter, r *http.Request) err
 	if ticketErr == nil {
 		for _, game := range games {
 			tResp, tErr := ticketClient.ListTickets(ctx, &ticketpb.ListTicketsRequest{
-				Filter:   &ticketpb.TicketFilter{GameCode: game.Code, Status: "issued"},
+				Filter:   &ticketpb.TicketFilter{GameCode: game.Code},
 				Page:     1,
-				PageSize: 1, // We only need the total count
+				PageSize: 1,
 			})
 			if tErr == nil {
 				soldMap[game.Code] = tResp.Total
