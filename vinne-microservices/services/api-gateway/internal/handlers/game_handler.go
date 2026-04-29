@@ -1369,6 +1369,22 @@ func (h *gameHandler) GetActiveGames(w http.ResponseWriter, r *http.Request) err
 		games = []*gamepb.Game{} // Return empty array if nil
 	}
 
+	// Fetch sold ticket counts per game from ticket service (best-effort, non-blocking)
+	soldMap := make(map[string]int64)
+	ticketClient, ticketErr := h.grpcManager.TicketServiceClient()
+	if ticketErr == nil {
+		for _, game := range games {
+			tResp, tErr := ticketClient.ListTickets(ctx, &ticketpb.ListTicketsRequest{
+				Filter:   &ticketpb.TicketFilter{GameCode: game.Code, Status: "issued"},
+				Page:     1,
+				PageSize: 1, // We only need the total count
+			})
+			if tErr == nil {
+				soldMap[game.Code] = tResp.Total
+			}
+		}
+	}
+
 	// Filter out sensitive admin data - only return what retailers need
 	publicGames := make([]map[string]interface{}, 0, len(games))
 	for _, game := range games {
@@ -1399,6 +1415,7 @@ func (h *gameHandler) GetActiveGames(w http.ResponseWriter, r *http.Request) err
 			"draw_date":              game.DrawDate,
 			"prize_details":          game.PrizeDetails,
 			"total_tickets":          game.TotalTickets,
+			"sold_tickets":           soldMap[game.Code],
 		}
 		h.log.Info("GetActiveGames: game dates", "code", game.Code, "draw_date", game.DrawDate)
 		publicGames = append(publicGames, publicGame)
