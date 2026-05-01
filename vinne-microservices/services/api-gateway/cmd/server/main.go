@@ -310,6 +310,9 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	// Notification handler
 	notificationHandler := handlers.NewNotificationHandler(grpcManager)
 
+	// OTP handler
+	otpHandler := handlers.NewOTPHandler(redisClient, jwtService, grpcManager)
+
 	// Protected admin routes - create a group with auth middleware
 	adminGroup := r.Group("/api/v1/admin")
 	authConfig := &middleware.AuthConfig{
@@ -541,6 +544,19 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	r.POST("/api/v1/players/password-reset/validate-otp", playerHandler.ValidatePasswordResetOTP)
 	r.POST("/api/v1/players/password-reset/confirm", playerHandler.ConfirmPasswordReset)
 	r.POST("/api/v1/players/password-reset/resend-otp", playerHandler.ResendPasswordResetOTP)
+
+	// Phone OTP routes
+	r.POST("/api/v1/otp/send", otpHandler.Send)
+	r.POST("/api/v1/otp/verify", otpHandler.Verify)
+	r.GET("/api/v1/otp/status/{player_id}", otpHandler.Status)
+
+	// USSD ticket-holder OTP login
+	r.POST("/api/v1/players/ussd-otp/request", otpHandler.USSDCheckAndSend)
+	r.POST("/api/v1/players/ussd-otp/verify", otpHandler.USSDVerifyAndLogin)
+
+	// Password reset (public, no auth)
+	r.POST("/api/v1/players/forgot-password", otpHandler.ForgotPassword)
+	r.POST("/api/v1/players/reset-password", otpHandler.ResetPassword)
 
 	// Public player game routes - no authentication required
 	r.GET("/api/v1/players/games", gameHandler.GetActiveGames)
