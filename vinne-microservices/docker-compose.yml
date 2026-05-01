@@ -737,11 +737,11 @@ services:
       SERVICE_NAME: service-ticket
       SERVER_PORT: 51062
       METRICS_PORT: 8080
-      DATABASE_URL: postgresql://ticket:ticket123@service-ticket-db:5432/ticket_service?sslmode=disable
+      DATABASE_URL: postgresql://ticket:%23kettic%40333%21@service-ticket-db:5432/ticket_service?sslmode=disable
       DATABASE_HOST: service-ticket-db
       DATABASE_PORT: 5432
       DATABASE_USER: ticket
-      DATABASE_PASSWORD: ticket123
+      DATABASE_PASSWORD: "#kettic@333!"
       DATABASE_NAME: ticket_service
       REDIS_HOST: service-ticket-redis
       REDIS_PORT: 6379
