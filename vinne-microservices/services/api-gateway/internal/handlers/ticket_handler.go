@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	agentmgmtv1 "github.com/randco/randco-microservices/proto/agent/management/v1"
+	playerv1 "github.com/randco/randco-microservices/proto/player/v1"
 	ticketv1 "github.com/randco/randco-microservices/proto/ticket/v1"
 	walletv1 "github.com/randco/randco-microservices/proto/wallet/v1"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/grpc"
@@ -965,7 +967,46 @@ func (h *ticketHandler) ListPlayerTickets(w http.ResponseWriter, r *http.Request
 		return handleGRPCError(w, err, "Failed to retrieve tickets")
 	}
 
+	// Also fetch USSD tickets linked by phone (for players who bought via *899*92#)
+	if ussdTickets := h.fetchUSSDTickets(ctx, playerID, client); len(ussdTickets) > 0 {
+		seen := make(map[string]bool, len(result.Tickets))
+		for _, t := range result.Tickets {
+			seen[t.Id] = true
+		}
+		for _, t := range ussdTickets {
+			if !seen[t.Id] {
+				result.Tickets = append(result.Tickets, t)
+				result.Total++
+			}
+		}
+	}
+
 	return response.Success(w, http.StatusOK, "Player tickets retrieved successfully", result)
+}
+
+// fetchUSSDTickets looks up the player's phone and returns any tickets bought via USSD.
+// Returns nil silently on any error so the main ticket list is never affected.
+func (h *ticketHandler) fetchUSSDTickets(ctx context.Context, playerID string, ticketClient ticketv1.TicketServiceClient) []*ticketv1.Ticket {
+	playerClient, err := h.grpcManager.PlayerServiceClient()
+	if err != nil {
+		return nil
+	}
+	profile, err := playerClient.GetProfile(ctx, &playerv1.GetProfileRequest{PlayerId: playerID})
+	if err != nil || profile.PhoneNumber == "" {
+		return nil
+	}
+	// Ticket DB stores phones as 233XXXXXXXXX (strip leading +)
+	phone := strings.TrimPrefix(profile.PhoneNumber, "+")
+
+	resp, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+		Filter:   &ticketv1.TicketFilter{IssuerType: "USSD", IssuerId: phone},
+		Page:     1,
+		PageSize: 200,
+	})
+	if err != nil {
+		return nil
+	}
+	return resp.Tickets
 }
 
 // GetPlayerTicket retrieves a specific ticket for a player with ownership validation
