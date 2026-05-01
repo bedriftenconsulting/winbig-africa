@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -281,16 +280,20 @@ func (h *drawHandler) BulkUploadTickets(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
-	// If schedule lookup didn't return a code, derive it from the game name by
-	// keeping only alphanumeric chars and uppercasing — e.g. "iPhone 17 Pro Max" → "IPHONE17PROMAX"
-	if gameCode == "" && draw.GameName != "" {
-		safe := ""
-		for _, c := range draw.GameName {
-			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-				safe += string(c)
+	// If schedule lookup didn't return a code, look up an existing ticket for this schedule
+	// to get the authoritative game_code stored in the ticket DB
+	if gameCode == "" {
+		ticketClientForLookup, tcErr := h.grpcManager.TicketServiceClient()
+		if tcErr == nil {
+			existingResp, existingErr := ticketClientForLookup.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+				Filter:   &ticketv1.TicketFilter{GameScheduleId: draw.GameScheduleId},
+				Page:     1,
+				PageSize: 1,
+			})
+			if existingErr == nil && len(existingResp.Tickets) > 0 {
+				gameCode = existingResp.Tickets[0].GameCode
 			}
 		}
-		gameCode = strings.ToUpper(safe)
 	}
 	if gameCode == "" {
 		return response.ValidationError(w, "could not resolve game code for this draw", nil)
