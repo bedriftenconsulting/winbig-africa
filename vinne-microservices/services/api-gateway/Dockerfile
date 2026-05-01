@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Build arguments for version information
 ARG GIT_BRANCH=unknown
@@ -12,7 +12,7 @@ ARG VERSION=dev
 RUN apk add --no-cache git make
 
 # Disable Go checksum verification to avoid TLS timeouts
-ENV GONOSUMDB=* GONOSUMCHECK=* GONOPROXY=* GOPROXY=direct
+ENV GONOSUMDB=* GONOSUMCHECK=* GONOPROXY=* GOPROXY=direct GOWORK=off
 
 # Set working directory
 WORKDIR /app
