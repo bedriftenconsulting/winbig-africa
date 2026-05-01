@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { Trophy, Calendar, Ticket, AlertCircle } from "lucide-react";
+import { Trophy, Calendar, Ticket, AlertCircle, Tv2 } from "lucide-react";
 
 interface Winner {
   id?: string;
@@ -102,6 +102,20 @@ const ResultsPage = () => {
             </div>
           ) : (
             <div className="space-y-3">
+              {/* Live Reveal button — opens the fullscreen draw reveal page */}
+              <button
+                onClick={() => window.open("/draw-reveal", "_blank")}
+                className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-bold text-base tracking-wide transition-all active:scale-95"
+                style={{
+                  background: "linear-gradient(135deg, #fde047, #f59e0b)",
+                  color: "#000",
+                  boxShadow: "0 0 24px rgba(253,224,71,0.35)",
+                }}
+              >
+                <Tv2 size={20} />
+                Open Live Draw Reveal Screen
+              </button>
+
               {winners.map((w, i) => (
                 <div key={w.id || i} className="bg-card border border-border rounded-xl px-5 py-4 flex items-center gap-4 hover:border-primary/30 transition">
                   {/* Position badge */}
@@ -160,10 +174,22 @@ const ResultsPage = () => {
                         </p>
                       )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
-                        <Ticket size={11} /> {d.total_winners || d.winners?.length || 0} winner{(d.total_winners || d.winners?.length || 0) !== 1 ? "s" : ""}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {(d.total_winners || d.winners?.length || 0) > 0 && (
+                        <button
+                          onClick={() => window.open(`/draw-reveal?drawId=${d.id}`, "_blank")}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all active:scale-95"
+                          style={{ background: "linear-gradient(135deg, #fde047, #f59e0b)", color: "#000" }}
+                        >
+                          <Tv2 size={13} />
+                          Reveal
+                        </button>
+                      )}
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                          <Ticket size={11} /> {d.total_winners || d.winners?.length || 0} winner{(d.total_winners || d.winners?.length || 0) !== 1 ? "s" : ""}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
