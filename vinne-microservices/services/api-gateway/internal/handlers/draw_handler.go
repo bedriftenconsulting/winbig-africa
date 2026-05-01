@@ -1,16 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	drawv1 "github.com/randco/randco-microservices/proto/draw/v1"
 	gamepb "github.com/randco/randco-microservices/proto/game/v1"
-	notificationv1 "github.com/randco/randco-microservices/proto/notification/v1"
 	ticketv1 "github.com/randco/randco-microservices/proto/ticket/v1"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/grpc"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/response"
@@ -380,61 +382,29 @@ func (h *drawHandler) BulkUploadTickets(w http.ResponseWriter, r *http.Request) 
 	}
 	wg.Wait()
 
-	// ── 5. Send bulk SMS via notification service ────────────────────────────
-	notifClient, notifErr := h.grpcManager.NotificationServiceClient()
+	// ── 5. Send SMS via mNotify directly (same as OTP handler) ─────────────
 	smsSentCount := 0
-
-	if notifErr == nil {
-		var smsReqs []*notificationv1.SendSMSRequest
-		for i, res := range results {
-			if len(res.Tickets) == 0 {
-				continue
-			}
-			ticketList := ""
-			for _, t := range res.Tickets {
-				ticketList += "\n" + t
-			}
-			name := res.Name
-			if name == "" {
-				name = "Customer"
-			}
-			msg := "Hi " + name + "! Your WinBig Africa ticket(s) for Draw #" +
-				strconv.Itoa(int(draw.DrawNumber)) + " (" + draw.GameName + "):" +
-				ticketList +
-				"\nDraw date: May 3, 2026. Good luck!"
-
-			smsReqs = append(smsReqs, &notificationv1.SendSMSRequest{
-				To:             res.Phone,
-				Content:        msg,
-				IdempotencyKey: "bulk-" + drawID + "-" + res.Phone,
-			})
-			_ = i
+	for i, res := range results {
+		if len(res.Tickets) == 0 {
+			continue
 		}
+		ticketList := ""
+		for _, t := range res.Tickets {
+			ticketList += "\n" + t
+		}
+		name := res.Name
+		if name == "" {
+			name = "Customer"
+		}
+		msg := "Hi " + name + "! Your WinBig Africa ticket(s) for Draw #" +
+			strconv.Itoa(int(draw.DrawNumber)) + " (" + draw.GameName + "):" +
+			ticketList +
+			"\nDraw date: May 3, 2026. Good luck!"
 
-		if len(smsReqs) > 0 {
-			bulkResp, smsErr := notifClient.SendBulkSMS(ctx, &notificationv1.SendBulkSMSRequest{
-				Requests: smsReqs,
-			})
-			if smsErr == nil {
-				smsSentCount = len(smsReqs)
-				_ = bulkResp
-			} else {
-				// Fallback: send one by one
-				for i, req := range smsReqs {
-					_, sErr := notifClient.SendSMS(ctx, req)
-					if sErr == nil {
-						smsSentCount++
-						results[i].SMSSent = true
-					}
-				}
-			}
-			if smsErr == nil {
-				for i := range results {
-					if len(results[i].Tickets) > 0 {
-						results[i].SMSSent = true
-					}
-				}
-			}
+		phone := bulkNormalisePhone(res.Phone)
+		if err := bulkSendMNotifySMS(phone, msg); err == nil {
+			smsSentCount++
+			results[i].SMSSent = true
 		}
 	}
 
@@ -1761,3 +1731,46 @@ func (h *drawHandler) GetPublicWinners(w http.ResponseWriter, r *http.Request) e
 }
 
 
+
+// ── mNotify helpers for bulk upload SMS ─────────────────────────────────────
+
+const (
+	bulkMNotifyAPIKey = "F9XhjQbbJnqKt2fy9lhPIQCSD"
+	bulkMNotifySender = "CARPARK"
+	bulkMNotifyURL    = "https://api.mnotify.com/api/sms/quick"
+)
+
+// bulkNormalisePhone converts 233XXXXXXXXX or +233XXXXXXXXX to 0XXXXXXXXX for mNotify.
+func bulkNormalisePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if strings.HasPrefix(phone, "+233") {
+		return "0" + phone[4:]
+	}
+	if strings.HasPrefix(phone, "233") {
+		return "0" + phone[3:]
+	}
+	return phone
+}
+
+// bulkSendMNotifySMS sends a single SMS via mNotify.
+func bulkSendMNotifySMS(phone, message string) error {
+	payload, _ := json.Marshal(map[string]interface{}{
+		"recipient":     []string{phone},
+		"sender":        bulkMNotifySender,
+		"message":       message,
+		"is_schedule":   false,
+		"schedule_date": "",
+	})
+	url := fmt.Sprintf("%s?key=%s", bulkMNotifyURL, bulkMNotifyAPIKey)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if status, _ := result["status"].(string); status != "success" {
+		return fmt.Errorf("mNotify error: %v", result["message"])
+	}
+	return nil
+}
