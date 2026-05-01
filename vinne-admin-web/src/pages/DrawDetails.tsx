@@ -1225,11 +1225,11 @@ const DrawDetails: React.FC = () => {
                                   <div className="flex items-center gap-2">
                                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                                     <p className="text-sm text-yellow-800">
-                                      <strong>Total Tickets:</strong> {tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0}
+                                      <strong>Eligible Tickets:</strong> {tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0}
                                     </p>
                                   </div>
                                   <p className="text-xs text-yellow-700 mt-1">
-                                    Winners will be randomly selected from all valid ticket entries
+                                    Only tickets with a successful payment are eligible. Failed or pending payments are excluded.
                                   </p>
                                 </div>
 
@@ -1758,7 +1758,9 @@ const DrawDetails: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Tickets Sold</CardTitle>
-              <CardDescription>All tickets purchased for this draw</CardDescription>
+              <CardDescription>
+                All tickets for this draw. Only tickets with a <strong>completed</strong> payment status are eligible to win — failed or pending payments are excluded from the draw.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="mb-4">
@@ -1781,6 +1783,7 @@ const DrawDetails: React.FC = () => {
                       <TableHead>No. of Lines</TableHead>
                       <TableHead>Numbers</TableHead>
                       <TableHead>Amount</TableHead>
+                      <TableHead>Payment</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Amount Won</TableHead>
                       <TableHead>Terminal ID</TableHead>
@@ -1789,7 +1792,20 @@ const DrawDetails: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tickets?.tickets?.map((ticket: Record<string, unknown>) => (
+                    {ticketsLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                          Loading tickets...
+                        </TableCell>
+                      </TableRow>
+                    ) : !tickets?.tickets?.length ? (
+                      <TableRow>
+                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                          No tickets found for this draw.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                    tickets?.tickets?.map((ticket: Record<string, unknown>) => (
                       <TableRow key={ticket.id as string} className="cursor-pointer hover:bg-muted/50">
                             {/* Ticket Number */}
                             <TableCell className="font-mono">
@@ -1936,6 +1952,38 @@ const DrawDetails: React.FC = () => {
                               {formatCurrency(ticket.total_amount as number)}
                             </TableCell>
 
+                            {/* Payment Status */}
+                            <TableCell>
+                              {(() => {
+                                const ps = (ticket.payment_status as string) || ''
+                                if (ps === 'completed') {
+                                  return (
+                                    <Badge className="bg-green-100 text-green-800 text-xs">
+                                      Paid
+                                    </Badge>
+                                  )
+                                } else if (ps === 'failed') {
+                                  return (
+                                    <Badge className="bg-red-100 text-red-800 text-xs">
+                                      Failed
+                                    </Badge>
+                                  )
+                                } else if (ps === 'pending') {
+                                  return (
+                                    <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                                      Pending
+                                    </Badge>
+                                  )
+                                } else {
+                                  return (
+                                    <Badge className="bg-green-100 text-green-800 text-xs">
+                                      Paid
+                                    </Badge>
+                                  )
+                                }
+                              })()}
+                            </TableCell>
+
                             {/* Status */}
                             <TableCell>
                               <Badge
@@ -1994,7 +2042,8 @@ const DrawDetails: React.FC = () => {
                               </Dialog>
                             </TableCell>
                       </TableRow>
-                    ))}
+                    ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

@@ -1076,21 +1076,27 @@ func (h *drawHandler) GetDrawStatistics(w http.ResponseWriter, r *http.Request) 
 
 	// Count actual tickets from the ticket service using game_schedule_id so that
 	// tickets created after the draw record was inserted are also counted.
+	// Only count tickets with payment_status = "completed" — failed/pending payments
+	// are not valid draw entries and must not inflate the ticket count.
 	liveTicketCount := int64(draw.TotalTicketsSold)
 	liveTotalStakes := int64(0)
 	if draw.GameScheduleId != "" {
 		ticketClient, tcErr := h.grpcManager.TicketServiceClient()
 		if tcErr == nil {
+			paidFilter := &ticketv1.TicketFilter{
+				GameScheduleId: draw.GameScheduleId,
+				PaymentStatus:  "completed",
+			}
 			ticketResp, tcErr := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
-				Filter:   &ticketv1.TicketFilter{GameScheduleId: draw.GameScheduleId},
+				Filter:   paidFilter,
 				Page:     1,
 				PageSize: 1, // We only need the total count
 			})
 			if tcErr == nil {
 				liveTicketCount = int64(ticketResp.Total)
-				// Sum stakes from all tickets (fetch a larger page for stake sum)
+				// Sum stakes from all paid tickets (fetch a larger page for stake sum)
 				allTickets, tcErr2 := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
-					Filter:   &ticketv1.TicketFilter{GameScheduleId: draw.GameScheduleId},
+					Filter:   paidFilter,
 					Page:     1,
 					PageSize: int32(ticketResp.Total) + 1,
 				})
@@ -1365,6 +1371,10 @@ func (h *drawHandler) GetDrawTickets(w http.ResponseWriter, r *http.Request) err
 	// including those created after the draw record was inserted (which won't have
 	// draw_id set yet). We also backfill draw_id on those tickets so both fields
 	// stay in sync going forward.
+	//
+	// NOTE: We show ALL tickets here (including failed payments) so admins can see
+	// the full picture. The draw execution (Stage 3) separately enforces
+	// payment_status = "completed" when selecting eligible tickets.
 	filter := &ticketv1.TicketFilter{}
 	if draw.GameScheduleId != "" {
 		filter.GameScheduleId = draw.GameScheduleId

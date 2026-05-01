@@ -174,6 +174,9 @@ func (h *TicketHandler) ListTickets(ctx context.Context, req *ticketv1.ListTicke
 			endDate := req.Filter.EndDate.AsTime().Format(time.RFC3339)
 			filter.EndDate = &endDate
 		}
+		if req.Filter.PaymentStatus != "" {
+			filter.PaymentStatus = &req.Filter.PaymentStatus
+		}
 	}
 
 	tickets, total, err := h.ticketService.ListTickets(ctx, filter, int(req.Page), int(req.PageSize))

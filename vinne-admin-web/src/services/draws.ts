@@ -292,14 +292,28 @@ export const drawService = {
     params?: {
       status?: string
       retailer_id?: string
+      issuer_id?: string
       agent_id?: string
       page?: number
       limit?: number
+      page_size?: number
     }
   ) {
     try {
-      const response = await api.get(`/admin/draws/${id}/tickets`, { params })
-      // The API returns { tickets: [], total: number, page: number, page_size: number }
+      // Normalize params: backend reads issuer_id and page_size
+      const normalizedParams: Record<string, string | number | undefined> = {
+        status: params?.status,
+        issuer_id: params?.issuer_id || params?.retailer_id,
+        page: params?.page,
+        page_size: params?.page_size || params?.limit,
+      }
+      // Remove undefined keys
+      Object.keys(normalizedParams).forEach(
+        k => normalizedParams[k] === undefined && delete normalizedParams[k]
+      )
+      const response = await api.get(`/admin/draws/${id}/tickets`, { params: normalizedParams })
+      console.log('getDrawTickets response:', JSON.stringify(response.data, null, 2))
+      // The API returns { success, data: { tickets: [], total: number, ... } }
       return response.data?.data || { tickets: [] }
     } catch (error) {
       console.error('Error fetching draw tickets:', error)

@@ -538,6 +538,12 @@ func (r *ticketRepository) List(ctx context.Context, filter models.TicketFilter,
 		args = append(args, *filter.IsWinning)
 	}
 
+	if filter.PaymentStatus != nil {
+		argCount++
+		conditions = append(conditions, fmt.Sprintf("payment_status = $%d", argCount))
+		args = append(args, *filter.PaymentStatus)
+	}
+
 	if filter.StartDate != nil && *filter.StartDate != "" {
 		argCount++
 		conditions = append(conditions, fmt.Sprintf("issued_at >= $%d", argCount))

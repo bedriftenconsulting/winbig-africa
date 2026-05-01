@@ -181,6 +181,7 @@ message TicketFilter {
   google.protobuf.Timestamp start_date = 6;
   google.protobuf.Timestamp end_date = 7;
   string game_schedule_id = 9;  // Filter by game schedule UUID
+  string payment_status = 10;   // Filter by payment status (e.g. "completed")
 }
 
 // ListTicketsRequest requests a paginated list of tickets

@@ -756,7 +756,8 @@ func (s *drawService) CompleteDrawPreparation(ctx context.Context, drawID uuid.U
 		if ok {
 			// Filter by game_schedule_id so tickets created before the draw record
 			// was inserted (which have draw_id=NULL) are also counted.
-			ticketFilter := &ticketv1.TicketFilter{}
+			// Only count completed (paid) tickets — failed/pending payments are ineligible.
+			ticketFilter := &ticketv1.TicketFilter{PaymentStatus: "completed"}
 			if draw.GameScheduleID != uuid.Nil {
 				ticketFilter.GameScheduleId = draw.GameScheduleID.String()
 			} else {
@@ -1118,7 +1119,8 @@ func (s *drawService) ValidateVerificationAttempts(ctx context.Context, drawID u
 
 		// Use GameScheduleId filter to catch ALL tickets (draw_id may be NULL for tickets
 		// created before the draw was prepared). Fall back to draw_id if no schedule ID.
-		ticketFilter := &ticketv1.TicketFilter{Status: "issued"}
+		// Only include completed (paid) tickets — failed/pending payments cannot win.
+		ticketFilter := &ticketv1.TicketFilter{Status: "issued", PaymentStatus: "completed"}
 		if draw.GameScheduleID != uuid.Nil {
 			s.logger.Printf("[GRPC] Fetching tickets by game_schedule_id: %s", draw.GameScheduleID.String())
 			ticketFilter.GameScheduleId = draw.GameScheduleID.String()

@@ -4,11 +4,12 @@ go 1.24.0
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/randco/randco-microservices/shared v0.0.0-00010101000000-000000000000
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
 	github.com/pressly/goose/v3 v3.25.0
-	github.com/redis/go-redis/v9 v9.15.1
+	github.com/randco/randco-microservices/proto v0.0.0-00010101000000-000000000000
+	github.com/randco/randco-microservices/shared v0.0.0-00010101000000-000000000000
+	github.com/redis/go-redis/v9 v9.18.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.39.0
@@ -84,6 +85,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.7.1 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.42.0 // indirect
@@ -96,5 +98,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
 replace github.com/randco/randco-microservices/proto => ../../proto
+
 replace github.com/randco/randco-microservices/shared => ../../shared

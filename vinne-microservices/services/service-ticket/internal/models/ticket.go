@@ -547,6 +547,7 @@ type TicketFilter struct {
 	CustomerPhone  *string `json:"customer_phone,omitempty"`
 	Status         *string `json:"status,omitempty"`
 	IsWinning      *bool   `json:"is_winning,omitempty"`
+	PaymentStatus  *string `json:"payment_status,omitempty"`
 	StartDate      *string `json:"start_date,omitempty"`
 	EndDate        *string `json:"end_date,omitempty"`
 }

@@ -835,11 +835,10 @@ func (s *ticketService) ListTickets(ctx context.Context, filter models.TicketFil
 	if page < 1 {
 		page = 1
 	}
-	// Cap limit at 100 for general API/UI calls to prevent performance issues
 	if limit < 1 {
-		limit = 20 // Default page size
-	} else if limit > 100 {
-		limit = 100 // Max page size for general listing
+		limit = 20
+	} else if limit > 50000 {
+		limit = 50000
 	}
 
 	tickets, total, err := s.ticketRepo.List(ctx, filter, page, limit)
@@ -870,10 +869,12 @@ func (s *ticketService) GetAllTicketsForDraw(ctx context.Context, drawID uuid.UU
 		attribute.String("ticket.status", status),
 	)
 
-	// Build filter for the specific draw
+	// Build filter for the specific draw — only completed (paid) tickets are eligible
 	drawIDStr := drawID.String()
+	completedStatus := "completed"
 	filter := models.TicketFilter{
-		DrawID: &drawIDStr,
+		DrawID:        &drawIDStr,
+		PaymentStatus: &completedStatus,
 	}
 	if status != "" {
 		filter.Status = &status
