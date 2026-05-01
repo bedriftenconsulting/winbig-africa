@@ -2189,10 +2189,21 @@ const DrawDetails: React.FC = () => {
                               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                               body: JSON.stringify({ entries: bulkParsed }),
                             })
-                            const data = await res.json()
-                            setBulkResult(data?.data ?? data)
+                            const text = await res.text()
+                            let data: Record<string, unknown>
+                            try {
+                              data = JSON.parse(text)
+                            } catch {
+                              setBulkParseError(`Server error (HTTP ${res.status}): ${text.slice(0, 200)}`)
+                              return
+                            }
+                            if (!res.ok) {
+                              setBulkParseError((data?.message as string) || `Upload failed with status ${res.status}`)
+                              return
+                            }
+                            setBulkResult((data?.data ?? data) as typeof bulkResult)
                           } catch (err) {
-                            setBulkParseError('Upload failed: ' + String(err))
+                            setBulkParseError('Network error: ' + String(err))
                           } finally {
                             setBulkUploading(false)
                           }
