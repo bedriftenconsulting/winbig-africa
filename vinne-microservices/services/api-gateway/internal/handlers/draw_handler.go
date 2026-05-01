@@ -1399,6 +1399,9 @@ func (h *drawHandler) GetDrawTickets(w http.ResponseWriter, r *http.Request) err
 		filter.DrawId = drawID
 	}
 
+	// Only show paid tickets — unpaid/failed entries are not valid draw participants
+	filter.PaymentStatus = "completed"
+
 	// Add optional filters
 	if status != "" {
 		filter.Status = status

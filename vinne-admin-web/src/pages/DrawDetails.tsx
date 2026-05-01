@@ -1759,7 +1759,7 @@ const DrawDetails: React.FC = () => {
             <CardHeader>
               <CardTitle>Tickets Sold</CardTitle>
               <CardDescription>
-                All tickets for this draw. Only tickets with a <strong>completed</strong> payment status are eligible to win — failed or pending payments are excluded from the draw.
+                Paid tickets for this draw. Only tickets with a completed payment are shown — failed and pending payments are excluded.
               </CardDescription>
             </CardHeader>
             <CardContent>
