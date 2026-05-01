@@ -729,18 +729,23 @@ const DrawDetails: React.FC = () => {
       </div>
 
       {/* Player Details */}
-      {(ticket.customer_name || ticket.customer_phone || ticket.customer_email) && (
+      {(ticket.customer_name || ticket.customer_phone || ticket.customer_email || (ticket.issuer_id as string)?.startsWith('admin-bulk:')) && (
         <div className="border-t pt-6 space-y-3">
           <h4 className="font-medium text-sm text-muted-foreground mb-4">PLAYER DETAILS</h4>
           <div className="rounded-md border">
             <table className="w-full text-sm">
               <tbody>
-                {ticket.customer_name && (
-                  <tr className="border-b">
-                    <td className="p-3 text-muted-foreground w-40">Name</td>
-                    <td className="p-3 font-medium">{ticket.customer_name as string}</td>
-                  </tr>
-                )}
+                {(() => {
+                  const issuerId = (ticket.issuer_id as string) || ''
+                  const bulkName = issuerId.startsWith('admin-bulk:') ? issuerId.slice('admin-bulk:'.length) : null
+                  const displayName = (ticket.customer_name as string) || bulkName
+                  return displayName ? (
+                    <tr className="border-b">
+                      <td className="p-3 text-muted-foreground w-40">Name</td>
+                      <td className="p-3 font-medium">{displayName}</td>
+                    </tr>
+                  ) : null
+                })()}
                 {ticket.customer_phone && (
                   <tr className="border-b">
                     <td className="p-3 text-muted-foreground">Phone</td>
@@ -1923,21 +1928,29 @@ const DrawDetails: React.FC = () => {
                             {/* Issuer */}
                             <TableCell>
                               <div>
-                                <p className="font-medium text-xs">
-                                  {String(
-                                    (ticket.issuer_details as Record<string, unknown>)
-                                      ?.retailer_code ||
-                                      (ticket.issuer_details as Record<string, unknown>)
-                                        ?.player_id ||
+                                {(() => {
+                                  const issuerId = (ticket.issuer_id as string) || ''
+                                  const isBulk = issuerId.startsWith('admin-bulk:')
+                                  const customerName = isBulk ? issuerId.slice('admin-bulk:'.length) : null
+                                  const displayId = isBulk ? 'Bulk Upload' :
+                                    String(
+                                      (ticket.issuer_details as Record<string, unknown>)?.retailer_code ||
+                                      (ticket.issuer_details as Record<string, unknown>)?.player_id ||
                                       (ticket.retailer_code as string) ||
                                       (ticket.player_id as string) ||
-                                      (ticket.issuer_id as string) ||
+                                      issuerId ||
                                       'Unknown'
-                                  )}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {ticket.issuer_type as string}
-                                </p>
+                                    )
+                                  return (
+                                    <>
+                                      {customerName && (
+                                        <p className="font-medium text-xs text-blue-700">{customerName}</p>
+                                      )}
+                                      <p className="font-medium text-xs">{displayId}</p>
+                                      <p className="text-xs text-muted-foreground">{ticket.issuer_type as string}</p>
+                                    </>
+                                  )
+                                })()}
                               </div>
                             </TableCell>
 

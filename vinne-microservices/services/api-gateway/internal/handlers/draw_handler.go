@@ -349,7 +349,7 @@ func (h *drawHandler) BulkUploadTickets(w http.ResponseWriter, r *http.Request) 
 						{LineNumber: 1, BetType: "RAFFLE", TotalAmount: 2000},
 					},
 					IssuerType:    "ADMIN",
-					IssuerId:      "admin-bulk-upload",
+					IssuerId:      "admin-bulk:" + name,
 					CustomerPhone: phone,
 					PaymentMethod: "external",
 				})
