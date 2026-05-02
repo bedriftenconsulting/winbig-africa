@@ -23,7 +23,6 @@ import api from '@/lib/api'
 // ── Bulk Upload Tab ───────────────────────────────────────────────────────────
 
 function BulkUploadTab() {
-  const [selectedDrawId, setSelectedDrawId] = useState('')
   const [bulkRawText, setBulkRawText] = useState('')
   const [bulkParsed, setBulkParsed] = useState<{ phone: string; name: string; quantity: number }[]>([])
   const [bulkParseError, setBulkParseError] = useState('')
@@ -35,20 +34,37 @@ function BulkUploadTab() {
     results: { phone: string; name: string; quantity: number; tickets: string[]; sms_sent: boolean; error?: string }[]
   } | null>(null)
 
-  // Fetch all draws (scheduled + in_progress) to pick from
-  const { data: drawsData } = useQuery({
-    queryKey: ['all-draws-for-upload'],
+  // Fetch active games with their schedules
+  const { data: gamesData } = useQuery({
+    queryKey: ['active-games-for-upload'],
     queryFn: async () => {
-      const res = await api.get('/admin/draws', { params: { limit: 50 } })
-      return res.data?.data?.draws || res.data?.data || []
+      const res = await api.get('/admin/games', { params: { limit: 50 } })
+      return res.data?.data?.games || res.data?.data || []
     },
   })
 
-  const draws: Record<string, any>[] = (drawsData || []).filter((d: any) =>
-    !['DRAW_STATUS_COMPLETED', 'DRAW_STATUS_CANCELLED', 'DRAW_STATUS_FAILED'].includes(d.status)
+  const games: Record<string, any>[] = (gamesData || []).filter((g: any) =>
+    ['active', 'ACTIVE'].includes(g.status)
   )
 
-  const selectedDraw = draws.find((d: any) => d.id === selectedDrawId)
+  // For each selected game, fetch its schedules
+  const [selectedGameId, setSelectedGameId] = useState('')
+  const [selectedScheduleId, setSelectedScheduleId] = useState('')
+
+  const { data: schedulesData } = useQuery({
+    queryKey: ['game-schedules-for-upload', selectedGameId],
+    queryFn: async () => {
+      if (!selectedGameId) return []
+      const res = await api.get(`/admin/games/${selectedGameId}/schedule`)
+      const s = res.data?.data?.schedules || res.data?.data || []
+      return Array.isArray(s) ? s : [s]
+    },
+    enabled: !!selectedGameId,
+  })
+
+  const schedules: Record<string, any>[] = (schedulesData || []).filter((s: any) =>
+    s && s.id && !['COMPLETED', 'CANCELLED'].includes(s.status?.toUpperCase())
+  )
 
   const handlePreview = () => {
     const lines = bulkRawText.split('\n').map(l => l.trim()).filter(Boolean)
@@ -64,12 +80,12 @@ function BulkUploadTab() {
   }
 
   const handleUpload = async () => {
-    if (!selectedDrawId) { setBulkParseError('Please select a draw first'); return }
+    if (!selectedScheduleId) { setBulkParseError('Please select a game schedule first'); return }
     setBulkUploading(true)
     try {
       const apiBase = import.meta.env.VITE_API_URL || '/api/v1'
       const token = localStorage.getItem('access_token')
-      const res = await fetch(`${apiBase}/admin/draws/${selectedDrawId}/tickets/bulk-upload`, {
+      const res = await fetch(`${apiBase}/admin/schedules/${selectedScheduleId}/tickets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ entries: bulkParsed }),
@@ -103,30 +119,41 @@ function BulkUploadTab() {
       </CardHeader>
       <CardContent className="space-y-5">
 
-        {/* Draw selector */}
-        <div className="space-y-1.5">
-          <Label>Select Active Draw *</Label>
-          <Select value={selectedDrawId} onValueChange={setSelectedDrawId}>
-            <SelectTrigger className="max-w-md">
-              <SelectValue placeholder="Choose a draw to upload tickets for..." />
-            </SelectTrigger>
-            <SelectContent>
-              {draws.length === 0 && <SelectItem value="_none" disabled>No active draws found</SelectItem>}
-              {draws.map((d: any) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.game_name || d.draw_name} — Draw #{d.draw_number}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    ({d.status?.replace('DRAW_STATUS_', '').toLowerCase()})
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedDraw && (
-            <p className="text-xs text-muted-foreground">
-              Draw date: {new Date(selectedDraw.scheduled_time).toLocaleString()} · Schedule ID: {selectedDraw.game_schedule_id?.slice(0, 8)}...
-            </p>
-          )}
+        {/* Game + Schedule selector */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Select Active Game *</Label>
+            <Select value={selectedGameId} onValueChange={v => { setSelectedGameId(v); setSelectedScheduleId('') }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a game..." />
+              </SelectTrigger>
+              <SelectContent>
+                {games.length === 0 && <SelectItem value="_none" disabled>No active games found</SelectItem>}
+                {games.map((g: any) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name} <span className="text-xs text-muted-foreground ml-1">({g.code})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Select Schedule *</Label>
+            <Select value={selectedScheduleId} onValueChange={setSelectedScheduleId} disabled={!selectedGameId}>
+              <SelectTrigger>
+                <SelectValue placeholder={selectedGameId ? 'Choose a schedule...' : 'Select a game first'} />
+              </SelectTrigger>
+              <SelectContent>
+                {schedules.length === 0 && <SelectItem value="_none" disabled>No schedules found</SelectItem>}
+                {schedules.map((s: any) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.game_name || 'Schedule'} — {s.scheduled_draw ? new Date(s.scheduled_draw).toLocaleDateString() : s.id?.slice(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {!bulkResult ? (
@@ -154,7 +181,7 @@ function BulkUploadTab() {
               </Button>
               {bulkParsed.length > 0 && (
                 <Button
-                  disabled={bulkUploading || !selectedDrawId}
+                  disabled={bulkUploading || !selectedScheduleId}
                   onClick={handleUpload}
                 >
                   {bulkUploading

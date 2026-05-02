@@ -417,6 +417,62 @@ func (h *drawHandler) BulkUploadTickets(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// BulkUploadBySchedule is like BulkUploadTickets but takes a game_schedule_id
+// instead of a draw_id. It finds the active/scheduled draw for the schedule automatically.
+// POST /api/v1/admin/schedules/{scheduleId}/tickets/bulk-upload
+func (h *drawHandler) BulkUploadBySchedule(w http.ResponseWriter, r *http.Request) error {
+	scheduleID := router.GetParam(r, "scheduleId")
+	if scheduleID == "" {
+		return response.ValidationError(w, "scheduleId is required", nil)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	// Find the draw for this schedule — list all draws and filter by schedule ID
+	drawConn, err := h.grpcManager.GetConnection("draw")
+	if err != nil {
+		return response.ServiceUnavailableError(w, "Draw")
+	}
+	drawClient := drawv1.NewDrawServiceClient(drawConn)
+	listResp, err := drawClient.ListDraws(ctx, &drawv1.ListDrawsRequest{
+		Page:    1,
+		PerPage: 100,
+	})
+	if err != nil || listResp == nil || len(listResp.Draws) == 0 {
+		return response.NotFoundError(w, "No draws found")
+	}
+
+	// Filter by schedule ID and pick the most relevant draw
+	var selectedDraw *drawv1.Draw
+	for _, d := range listResp.Draws {
+		if d.GameScheduleId != scheduleID {
+			continue
+		}
+		s := d.Status.String()
+		if s == "DRAW_STATUS_SCHEDULED" || s == "DRAW_STATUS_IN_PROGRESS" {
+			selectedDraw = d
+			break
+		}
+		if selectedDraw == nil {
+			selectedDraw = d // keep first match as fallback
+		}
+	}
+	if selectedDraw == nil {
+		return response.NotFoundError(w, "No draw found for this game schedule")
+	}
+
+	// Inject the draw ID as a URL param so BulkUploadTickets can read it
+	existingParams, _ := r.Context().Value(router.ContextParams).(map[string]string)
+	newParams := make(map[string]string)
+	for k, v := range existingParams {
+		newParams[k] = v
+	}
+	newParams["id"] = selectedDraw.Id
+	r2 := r.WithContext(context.WithValue(r.Context(), router.ContextParams, newParams))
+	return h.BulkUploadTickets(w, r2)
+}
+
 // GetAgentDrawHistory retrieves draw history for agents with summary statistics
 func (h *drawHandler) GetAgentDrawHistory(w http.ResponseWriter, r *http.Request) error {
 	// Parse query parameters
