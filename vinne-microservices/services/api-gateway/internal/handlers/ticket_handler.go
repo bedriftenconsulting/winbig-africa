@@ -1105,6 +1105,11 @@ func (h *ticketHandler) GetTicketsByPhone(w http.ResponseWriter, r *http.Request
 
 	// Normalise: strip leading + so it matches DB format
 	phone = strings.TrimPrefix(phone, "+")
+	// Also derive local format: 233XXXXXXXXX → 0XXXXXXXXX
+	localPhone := phone
+	if strings.HasPrefix(phone, "233") && len(phone) > 3 {
+		localPhone = "0" + phone[3:]
+	}
 
 	ctx := r.Context()
 	client, err := h.grpcManager.TicketServiceClient()
@@ -1128,7 +1133,7 @@ func (h *ticketHandler) GetTicketsByPhone(w http.ResponseWriter, r *http.Request
 	var matched []*ticketv1.Ticket
 	for _, t := range result.Tickets {
 		tp := strings.TrimPrefix(t.CustomerPhone, "+")
-		if tp == phone {
+		if tp == phone || tp == localPhone || t.CustomerPhone == phone || t.CustomerPhone == localPhone {
 			matched = append(matched, t)
 		}
 	}

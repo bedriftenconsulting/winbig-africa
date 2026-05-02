@@ -261,8 +261,13 @@ func lookupUSSDPlayer(e164Phone string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Ticket DB stores phones as 233XXXXXXXXX (no leading +)
+	// Ticket DB stores phones in various formats — try both 233XXXXXXXXX and 0XXXXXXXXX
 	ticketPhone := strings.TrimPrefix(e164Phone, "+")
+	// Also derive local format: 233XXXXXXXXX → 0XXXXXXXXX
+	localPhone := ticketPhone
+	if strings.HasPrefix(ticketPhone, "233") && len(ticketPhone) > 3 {
+		localPhone = "0" + ticketPhone[3:]
+	}
 
 	ticketDSN := os.Getenv("TICKET_DB_DSN")
 	if ticketDSN == "" {
@@ -276,8 +281,8 @@ func lookupUSSDPlayer(e164Phone string) (string, error) {
 
 	var count int
 	err = tdb.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM tickets WHERE customer_phone = $1 AND payment_status = 'completed'`,
-		ticketPhone,
+		`SELECT COUNT(*) FROM tickets WHERE customer_phone IN ($1, $2) AND payment_status = 'completed'`,
+		ticketPhone, localPhone,
 	).Scan(&count)
 	if err != nil || count == 0 {
 		return "", nil
