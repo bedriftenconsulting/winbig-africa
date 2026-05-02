@@ -17,6 +17,7 @@ import {
   Users,
   CreditCard,
   Phone,
+  Ticket,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -46,6 +47,7 @@ const operationsNav = [
 ]
 
 const commerceNav = [
+  { name: 'Quick Entry', href: '/entries', icon: Ticket },
   { name: 'Players', href: '/players', icon: Users },
   { name: 'Transactions', href: '/transactions', icon: CreditCard },
   { name: 'USSD Sessions', href: '/ussd-sessions', icon: Phone },
