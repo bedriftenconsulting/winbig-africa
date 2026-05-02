@@ -9,7 +9,9 @@ import {
   Eye,
   Download,
   Filter,
-  Search
+  Search,
+  Trophy,
+  PartyPopper
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -120,7 +122,7 @@ const WinsModule: React.FC = () => {
   const markDeliveredMutation = useMutation({
     mutationFn: (data: { ticketId: string; deliveryDetails: any }) =>
       winnerSelectionService.markPhysicalPrizeDelivered(data.ticketId, data.deliveryDetails),
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: ['unpaid-wins'] })
       queryClient.invalidateQueries({ queryKey: ['paid-wins'] })
       queryClient.invalidateQueries({ queryKey: ['wins-module'] })
@@ -130,8 +132,8 @@ const WinsModule: React.FC = () => {
       setRecipientName('')
       setDeliveryNotes('')
       toast({
-        title: 'Prize Delivered',
-        description: 'Physical prize has been marked as delivered to the winner.'
+        title: '🎉 Prize Delivered!',
+        description: result.message || 'The prize has been marked as delivered to the winner.',
       })
     },
     onError: (error: Error) => {
@@ -576,6 +578,7 @@ const WinsModule: React.FC = () => {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  className="border-green-500 text-green-700 hover:bg-green-50"
                                   onClick={() => {
                                     if (win.winning_amount === 0) {
                                       // Physical prize — open delivery confirmation dialog
@@ -588,7 +591,7 @@ const WinsModule: React.FC = () => {
                                   }}
                                   disabled={processPayoutMutation.isPending || markDeliveredMutation.isPending}
                                 >
-                                  {win.winning_amount === 0 ? '🎁 Mark as Delivered' : 'Pay Now'}
+                                  {win.winning_amount === 0 ? '🎁 Mark Delivered' : 'Pay Now'}
                                 </Button>
                               )}
                             </div>
@@ -838,29 +841,42 @@ const WinsModule: React.FC = () => {
       <Dialog open={deliveryDialogOpen} onOpenChange={setDeliveryDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirm Prize Delivery</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-yellow-500" />
+              Confirm Prize Delivery
+            </DialogTitle>
             <DialogDescription>
-              Record that {selectedWin?.game_name} has been delivered to the winner
+              Record that the prize has been handed to the winner. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
 
           {selectedWin && (
             <div className="space-y-4">
-              {/* Winner info */}
-              <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Ticket</span>
-                  <span className="font-mono font-medium">{selectedWin.ticket_number}</span>
+              {/* Prize summary */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-2">
+                <div className="flex items-center gap-2 text-yellow-800 font-semibold">
+                  <PartyPopper className="h-4 w-4" />
+                  {selectedWin.game_name || 'Prize'}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Winner</span>
-                  <span className="font-medium">{selectedWin.player_name || selectedWin.player_id}</span>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Ticket</span>
+                    <p className="font-mono font-medium">{selectedWin.ticket_number}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Winner</span>
+                    <p className="font-medium">{selectedWin.player_name || selectedWin.player_id || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Phone</span>
+                    <p className="font-mono">{selectedWin.player_name?.startsWith('0') || selectedWin.player_name?.startsWith('233') ? selectedWin.player_name : selectedWin.player_id || '—'}</p>
+                  </div>
                 </div>
               </div>
 
               {/* Delivery Date */}
               <div>
-                <Label>Delivery Date *</Label>
+                <Label>Date Prize Was Handed Over *</Label>
                 <Input
                   type="date"
                   value={deliveryDate}
@@ -871,9 +887,9 @@ const WinsModule: React.FC = () => {
 
               {/* Received By */}
               <div>
-                <Label>Received By *</Label>
+                <Label>Received By (Winner's Full Name) *</Label>
                 <Input
-                  placeholder="Winner's full name"
+                  placeholder="e.g. Kwame Mensah"
                   value={recipientName}
                   onChange={e => setRecipientName(e.target.value)}
                   className="mt-1"
@@ -884,7 +900,7 @@ const WinsModule: React.FC = () => {
               <div>
                 <Label>Notes (optional)</Label>
                 <Textarea
-                  placeholder="ID verified, vehicle registration completed, etc."
+                  placeholder="e.g. ID verified, winner collected in person at Accra office"
                   value={deliveryNotes}
                   onChange={e => setDeliveryNotes(e.target.value)}
                   className="mt-1"
@@ -899,10 +915,13 @@ const WinsModule: React.FC = () => {
               Cancel
             </Button>
             <Button
+              className="bg-green-600 hover:bg-green-700"
               onClick={handleMarkDelivered}
               disabled={markDeliveredMutation.isPending || !deliveryDate || !recipientName.trim()}
             >
-              {markDeliveredMutation.isPending ? 'Saving...' : 'Confirm Delivery'}
+              {markDeliveredMutation.isPending
+                ? 'Saving...'
+                : '✓ Confirm — Prize Delivered'}
             </Button>
           </DialogFooter>
         </DialogContent>
