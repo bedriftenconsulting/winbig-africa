@@ -300,7 +300,9 @@ func lookupUSSDPlayer(e164Phone string) (string, error) {
 		e164Phone,
 	).Scan(&playerID)
 	if err == sql.ErrNoRows {
-		return "", nil
+		// No player account yet — use the phone itself as a stable identity token.
+		// This covers admin-uploaded tickets where no USSD/web registration happened.
+		return "phone:" + ticketPhone, nil
 	}
 	return playerID, err
 }

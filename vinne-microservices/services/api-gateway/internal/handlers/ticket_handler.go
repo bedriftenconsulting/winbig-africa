@@ -1093,3 +1093,48 @@ func (h *ticketHandler) GetPlayerTicketBySerial(w http.ResponseWriter, r *http.R
 
 	return response.Success(w, http.StatusOK, "Ticket retrieved successfully", result)
 }
+
+// GetTicketsByPhone returns completed tickets for a given phone number.
+// Used by admin-uploaded ticket holders who have no player account.
+// Route: GET /api/v1/public/tickets/by-phone/{phone}
+func (h *ticketHandler) GetTicketsByPhone(w http.ResponseWriter, r *http.Request) error {
+	phone := router.GetParam(r, "phone")
+	if phone == "" {
+		return response.Error(w, http.StatusBadRequest, "MISSING_PHONE", "phone is required", nil)
+	}
+
+	// Normalise: strip leading + so it matches DB format
+	phone = strings.TrimPrefix(phone, "+")
+
+	ctx := r.Context()
+	client, err := h.grpcManager.TicketServiceClient()
+	if err != nil {
+		return response.Error(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Ticket service unavailable", nil)
+	}
+
+	paymentStatus := "completed"
+	result, err := client.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+		Filter: &ticketv1.TicketFilter{
+			PaymentStatus: paymentStatus,
+		},
+		Page:     1,
+		PageSize: 100,
+	})
+	if err != nil {
+		return handleGRPCError(w, err, "Failed to retrieve tickets")
+	}
+
+	// Filter by phone in Go since the ticket service status filter is unreliable
+	var matched []*ticketv1.Ticket
+	for _, t := range result.Tickets {
+		tp := strings.TrimPrefix(t.CustomerPhone, "+")
+		if tp == phone {
+			matched = append(matched, t)
+		}
+	}
+
+	return response.Success(w, http.StatusOK, "Tickets retrieved successfully", map[string]interface{}{
+		"tickets": matched,
+		"total":   len(matched),
+	})
+}

@@ -572,6 +572,9 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	// Public games list - no authentication required
 	r.GET("/api/v1/public/games", gameHandler.GetActiveGames)
 
+	// Public ticket lookup by phone (for admin-uploaded ticket holders)
+	r.GET("/api/v1/public/tickets/by-phone/{phone}", ticketHandler.GetTicketsByPhone)
+
 	// Webhook routes - no JWT authentication (uses signature verification)
 	// These endpoints receive callbacks from payment providers (Orange, MTN, Telecel)
 	r.POST("/api/v1/webhooks/orange", webhookHandler.HandleOrangeWebhook)

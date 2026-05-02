@@ -283,17 +283,24 @@ const MyTicketsPage = () => {
 
   useEffect(() => {
     if (!token || !resolvedPlayerId) { navigate("/sign-in"); return; }
-    fetch(`${BASE}/players/${resolvedPlayerId}/tickets?page_size=100&page=1`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+
+    // phone:-prefixed IDs are for admin-uploaded ticket holders with no player account
+    const isPhoneId = resolvedPlayerId.startsWith("phone:")
+    const phone = isPhoneId ? resolvedPlayerId.slice("phone:".length) : null
+
+    const url = isPhoneId
+      ? `${BASE}/public/tickets/by-phone/${phone}`
+      : `${BASE}/players/${resolvedPlayerId}/tickets?page_size=100&page=1`
+
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
-        const raw = d?.data?.tickets ?? d?.tickets ?? [];
-        setTickets(raw);
+        const raw = d?.data?.tickets ?? d?.tickets ?? []
+        setTickets(raw)
       })
       .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [navigate, token, resolvedPlayerId]);
+      .finally(() => setLoading(false))
+  }, [navigate, token, resolvedPlayerId])
 
   useEffect(() => {
     if (tab !== "transactions" || !token || !resolvedPlayerId) return;
