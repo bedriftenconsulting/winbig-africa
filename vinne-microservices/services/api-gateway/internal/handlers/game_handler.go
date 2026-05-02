@@ -836,16 +836,25 @@ func (h *gameHandler) GetGameSchedule(w http.ResponseWriter, r *http.Request) er
 		var ticketsSold int64
 		if ticketClientErr == nil {
 			const nilUUID = "00000000-0000-0000-0000-000000000000"
-			filter := &ticketv1.TicketFilter{PaymentStatus: "completed"}
+			// First: count by schedule_id (precise)
 			if schedule.Id != "" && schedule.Id != nilUUID {
-				filter.GameScheduleId = schedule.Id
-			} else if schedule.GameCode != "" {
-				filter.GameCode = schedule.GameCode
+				if countResp, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+					Filter: &ticketv1.TicketFilter{GameScheduleId: schedule.Id, PaymentStatus: "completed"},
+					Page: 1, PageSize: 1,
+				}); err == nil {
+					ticketsSold = countResp.Total
+				}
 			}
-			if countResp, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
-				Filter: filter, Page: 1, PageSize: 1,
-			}); err == nil {
-				ticketsSold = countResp.Total
+			// Fallback: if schedule_id returned 0 and we have a game_code, count by game_code.
+			// USSD tickets may be issued under a different schedule ID than what the game service
+			// considers the active schedule — game_code is the reliable cross-schedule identifier.
+			if ticketsSold == 0 && schedule.GameCode != "" {
+				if countResp, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+					Filter: &ticketv1.TicketFilter{GameCode: schedule.GameCode, PaymentStatus: "completed"},
+					Page: 1, PageSize: 1,
+				}); err == nil {
+					ticketsSold = countResp.Total
+				}
 			}
 		}
 
@@ -1619,6 +1628,8 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 		schedules = []*gamepb.GameSchedule{}
 	}
 
+	ticketClient, ticketClientErr := h.grpcManager.TicketServiceClient()
+
 	playerSchedules := make([]map[string]any, 0)
 	for _, schedule := range schedules {
 		// Only return active schedules with status "scheduled" or "in_progress"
@@ -1629,6 +1640,27 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 		status := strings.ToLower(schedule.Status)
 		if status != "scheduled" && status != "in_progress" {
 			continue
+		}
+
+		var soldTickets int64
+		if ticketClientErr == nil && schedule.GameCode != "" {
+			const nilUUID = "00000000-0000-0000-0000-000000000000"
+			if schedule.Id != "" && schedule.Id != nilUUID {
+				if cr, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+					Filter: &ticketv1.TicketFilter{GameScheduleId: schedule.Id, PaymentStatus: "completed"},
+					Page: 1, PageSize: 1,
+				}); err == nil {
+					soldTickets = cr.Total
+				}
+			}
+			if soldTickets == 0 {
+				if cr, err := ticketClient.ListTickets(ctx, &ticketv1.ListTicketsRequest{
+					Filter: &ticketv1.TicketFilter{GameCode: schedule.GameCode, PaymentStatus: "completed"},
+					Page: 1, PageSize: 1,
+				}); err == nil {
+					soldTickets = cr.Total
+				}
+			}
 		}
 
 		scheduleMap := map[string]any{
@@ -1644,7 +1676,7 @@ func (h *gameHandler) GetScheduledGamesForPlayer(w http.ResponseWriter, r *http.
 			"status":          schedule.Status,
 			"logo_url":        schedule.LogoUrl,
 			"brand_color":     schedule.BrandColor,
-			"sold_tickets":    countTicketsSoldByGameCode(schedule.GameCode),
+			"sold_tickets":    soldTickets,
 		}
 
 		// Handle timestamps properly
