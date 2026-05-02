@@ -1105,10 +1105,20 @@ func (h *ticketHandler) GetTicketsByPhone(w http.ResponseWriter, r *http.Request
 
 	// Normalise: strip leading + so it matches DB format
 	phone = strings.TrimPrefix(phone, "+")
-	// Also derive local format: 233XXXXXXXXX → 0XXXXXXXXX
-	localPhone := phone
-	if strings.HasPrefix(phone, "233") && len(phone) > 3 {
-		localPhone = "0" + phone[3:]
+	// Build all possible formats to match against DB
+	// Input could be: 256826832, 233256826832, 0256826832
+	var phoneVariants []string
+	phoneVariants = append(phoneVariants, phone)
+	if strings.HasPrefix(phone, "233") {
+		// 233XXXXXXXXX → 0XXXXXXXXX
+		phoneVariants = append(phoneVariants, "0"+phone[3:])
+	} else if strings.HasPrefix(phone, "0") {
+		// 0XXXXXXXXX → 233XXXXXXXXX
+		phoneVariants = append(phoneVariants, "233"+phone[1:])
+	} else {
+		// bare 9-digit: try both 0XXXXXXXXX and 233XXXXXXXXX
+		phoneVariants = append(phoneVariants, "0"+phone)
+		phoneVariants = append(phoneVariants, "233"+phone)
 	}
 
 	ctx := r.Context()
@@ -1129,11 +1139,15 @@ func (h *ticketHandler) GetTicketsByPhone(w http.ResponseWriter, r *http.Request
 		return handleGRPCError(w, err, "Failed to retrieve tickets")
 	}
 
-	// Filter by phone in Go since the ticket service status filter is unreliable
+	// Filter by phone in Go — match any of the phone variants
+	phoneSet := make(map[string]bool)
+	for _, v := range phoneVariants {
+		phoneSet[v] = true
+	}
 	var matched []*ticketv1.Ticket
 	for _, t := range result.Tickets {
 		tp := strings.TrimPrefix(t.CustomerPhone, "+")
-		if tp == phone || tp == localPhone || t.CustomerPhone == phone || t.CustomerPhone == localPhone {
+		if phoneSet[tp] || phoneSet[t.CustomerPhone] {
 			matched = append(matched, t)
 		}
 	}
