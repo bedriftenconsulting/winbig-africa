@@ -67,7 +67,12 @@ WEB_NETWORK_MAP = {
 # Game / Pricing config
 # ---------------------------------------------------------------------------
 WINBIG_UNIT_PRICE = 2000        # GHS 20 per draw entry (pesewas)
-HUBTEL_FEE_GHS    = 0.50        # flat Hubtel processing fee added on top of ticket price
+
+def hubtel_fee_ghs(amount_ghs: float) -> float:
+    """Telecel/Hubtel fee: GHS 0.50 flat for amounts ≤ GHS 50, 1% for amounts > GHS 50."""
+    if amount_ghs <= 50.0:
+        return 0.50
+    return round(amount_ghs * 0.01, 2)
 MNOTIFY_SMS_KEY   = "F9XhjQbbJnqKt2fy9lhPIQCSD"
 SMS_SENDER_ID     = "CARPARK"
 
@@ -934,7 +939,9 @@ def handle_buy_entries(session_id, msisdn, qty, network="mtn"):
         return ("Sorry, an error occurred.\r\nPlease try again later.", True)
 
     _fire_momo_async(msisdn, amount, result["reference"], network=network)
-    total = qty * 20 + HUBTEL_FEE_GHS
+    ticket_ghs = qty * 20
+    fee        = hubtel_fee_ghs(ticket_ghs)
+    total      = ticket_ghs + fee
     return (
         f"Processing payment...\r\n"
         f"{qty} Entr{'y' if qty == 1 else 'ies'} GHS {total:.2f}\r\n"
@@ -1089,13 +1096,15 @@ def ussd():
                     "Please enter a\r\n"
                     "positive number:"
                 )
-            qty   = int(qty_str)
-            total = qty * 20 + HUBTEL_FEE_GHS
+            qty        = int(qty_str)
+            ticket_ghs = qty * 20
+            fee        = hubtel_fee_ghs(ticket_ghs)
+            total      = ticket_ghs + fee
             return resp(
                 f"Confirm Purchase:\r\n"
                 f"{qty} WinBig Entr{'y' if qty == 1 else 'ies'}\r\n"
                 f"Total = GHS {total:.2f}\r\n"
-                "(incl. GHS 0.50 fee)\r\n\r\n"
+                f"(incl. GHS {fee:.2f} fee)\r\n\r\n"
                 "1. Confirm & Pay\r\n"
                 "0. Cancel"
             )
