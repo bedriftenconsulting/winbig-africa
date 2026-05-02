@@ -345,7 +345,7 @@ class WinnerSelectionService {
   }
 
   /**
-   * Get wins module data — aggregated from ticket statuses
+   * Get wins module data — aggregated from draw results
    */
   async getWinsModule(): Promise<WinsModule> {
     const [unpaid, paid] = await Promise.all([
@@ -363,7 +363,35 @@ class WinnerSelectionService {
   }
 
   /**
-   * Get unpaid wins — tickets with status "won"
+   * Fetch all completed draws and extract winning tickets from draw results.
+   * A winner = a ticket in result_calculation_data.winning_tickets of a completed draw.
+   */
+  private async getWinningTicketsFromDraws(): Promise<Record<string, any>[]> {
+    // Get all completed draws
+    const drawsRes = await api.get('/admin/draws', { params: { status: 'DRAW_STATUS_COMPLETED', limit: 100 } })
+    const draws: Record<string, any>[] = drawsRes.data?.data?.draws || drawsRes.data?.data || []
+    
+    const allWinners: Record<string, any>[] = []
+    for (const draw of draws) {
+      // Get draw results which contain winning_tickets
+      try {
+        const resultsRes = await api.get(`/admin/draws/${draw.id}/results`)
+        const winningTickets: Record<string, any>[] = 
+          resultsRes.data?.data?.winning_tickets ||
+          resultsRes.data?.data?.result_calculation_data?.winning_tickets ||
+          draw.stage?.result_calculation_data?.winning_tickets || []
+        for (const t of winningTickets) {
+          allWinners.push({ ...t, draw_id: draw.id, draw_name: draw.draw_name, game_name: draw.game_name, scheduled_time: draw.scheduled_time })
+        }
+      } catch {
+        // skip draws with no results
+      }
+    }
+    return allWinners
+  }
+
+  /**
+   * Get unpaid wins — winners from completed draws whose payout_status is not 'paid'
    */
   async getUnpaidWins(params?: {
     game_id?: string
@@ -376,19 +404,20 @@ class WinnerSelectionService {
     total_count: number
     total_amount: number
   }> {
-    const query: Record<string, string | number> = { status: 'won', limit: params?.limit || 50 }
-    if (params?.game_id) query.game_code = params.game_id
-    if (params?.player_id) query.issuer_id = params.player_id
-    if (params?.page) query.page = params.page
-    const res = await api.get('/admin/tickets', { params: query })
-    const tickets: Record<string, any>[] = res.data?.data?.tickets || []
-    const wins = tickets.map(t => this.ticketToUnpaidWin(t))
+    const tickets = await this.getWinningTicketsFromDraws()
+    const unpaid = tickets.filter(t => {
+      const status = (t.payout_status || t.payment_status || t.status || '')
+      return status !== 'paid' && status !== 'completed'
+    })
+    let wins = unpaid.map(t => this.ticketToUnpaidWin(t))
+    if (params?.game_id) wins = wins.filter(w => w.game_id?.toLowerCase().includes(params.game_id!.toLowerCase()) || w.game_name?.toLowerCase().includes(params.game_id!.toLowerCase()))
+    if (params?.player_id) wins = wins.filter(w => w.player_id?.includes(params.player_id!) || w.player_name?.includes(params.player_id!))
     const total_amount = wins.reduce((s, w) => s + w.winning_amount, 0)
-    return { wins, total_count: parseInt(String(res.data?.data?.total ?? wins.length), 10) || wins.length, total_amount }
+    return { wins, total_count: wins.length, total_amount }
   }
 
   /**
-   * Get paid wins — tickets with status "paid"
+   * Get paid wins — winners from completed draws whose payout_status is 'paid'
    */
   async getPaidWins(params?: {
     game_id?: string
@@ -402,15 +431,16 @@ class WinnerSelectionService {
     total_count: number
     total_amount: number
   }> {
-    const query: Record<string, string | number> = { status: 'paid', limit: params?.limit || 50 }
-    if (params?.game_id) query.game_code = params.game_id
-    if (params?.player_id) query.issuer_id = params.player_id
-    if (params?.page) query.page = params.page
-    const res = await api.get('/admin/tickets', { params: query })
-    const tickets: Record<string, any>[] = res.data?.data?.tickets || []
-    const wins = tickets.map(t => this.ticketToPaidWin(t))
+    const tickets = await this.getWinningTicketsFromDraws()
+    const paid = tickets.filter(t => {
+      const status = (t.payout_status || t.payment_status || t.status || '')
+      return status === 'paid' || status === 'completed'
+    })
+    let wins = paid.map(t => this.ticketToPaidWin(t))
+    if (params?.game_id) wins = wins.filter(w => w.game_id?.toLowerCase().includes(params.game_id!.toLowerCase()) || w.game_name?.toLowerCase().includes(params.game_id!.toLowerCase()))
+    if (params?.player_id) wins = wins.filter(w => w.player_id?.includes(params.player_id!) || w.player_name?.includes(params.player_id!))
     const total_amount = wins.reduce((s, w) => s + w.winning_amount, 0)
-    return { wins, total_count: parseInt(String(res.data?.data?.total ?? wins.length), 10) || wins.length, total_amount }
+    return { wins, total_count: wins.length, total_amount }
   }
 
   /**
