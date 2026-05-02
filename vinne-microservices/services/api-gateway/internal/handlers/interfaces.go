@@ -155,6 +155,7 @@ type DrawCRUDHandler interface {
 	DeleteDraw(w http.ResponseWriter, r *http.Request) error
 	BulkUploadTickets(w http.ResponseWriter, r *http.Request) error
 	BulkUploadBySchedule(w http.ResponseWriter, r *http.Request) error
+	ResendSMS(w http.ResponseWriter, r *http.Request) error
 }
 
 // DrawExecutionHandler defines draw execution operations

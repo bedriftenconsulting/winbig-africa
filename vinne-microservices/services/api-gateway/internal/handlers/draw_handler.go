@@ -418,6 +418,101 @@ func (h *drawHandler) BulkUploadTickets(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// ResendSMS sends the CarPark confirmation SMS to a list of existing entries.
+// Groups by phone so each recipient gets one SMS with all their entry numbers.
+// POST /api/v1/admin/draws/{id}/tickets/resend-sms
+func (h *drawHandler) ResendSMS(w http.ResponseWriter, r *http.Request) error {
+	drawID := router.GetParam(r, "id")
+	if drawID == "" {
+		return response.ValidationError(w, "draw_id is required", nil)
+	}
+
+	var req struct {
+		Tickets []struct {
+			Phone        string `json:"phone"`
+			SerialNumber string `json:"serial_number"`
+		} `json:"tickets"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return response.ValidationError(w, "invalid request body", nil)
+	}
+	if len(req.Tickets) == 0 {
+		return response.ValidationError(w, "tickets list is empty", nil)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	drawConn, err := h.grpcManager.GetConnection("draw")
+	if err != nil {
+		return response.ServiceUnavailableError(w, "Draw")
+	}
+	drawClient := drawv1.NewDrawServiceClient(drawConn)
+	drawResp, err := drawClient.GetDraw(ctx, &drawv1.GetDrawRequest{Id: drawID})
+	if err != nil || !drawResp.Success {
+		return response.NotFoundError(w, "Draw")
+	}
+	draw := drawResp.Draw
+
+	drawDateLabel := "03 May 2026"
+	if draw.ScheduledTime != nil {
+		drawDateLabel = draw.ScheduledTime.AsTime().Format("02 Jan 2006")
+	}
+
+	type phoneGroup struct {
+		Phone   string
+		Serials []string
+	}
+	phoneMap := make(map[string]*phoneGroup)
+	phoneOrder := []string{}
+	for _, t := range req.Tickets {
+		p := bulkNormalisePhone(t.Phone)
+		if _, ok := phoneMap[p]; !ok {
+			phoneMap[p] = &phoneGroup{Phone: p}
+			phoneOrder = append(phoneOrder, p)
+		}
+		phoneMap[p].Serials = append(phoneMap[p].Serials, t.SerialNumber)
+	}
+
+	sentMap := make(map[string]bool)
+	sentCount := 0
+	for _, phone := range phoneOrder {
+		group := phoneMap[phone]
+		entryLabel := "Entry"
+		if len(group.Serials) > 1 {
+			entryLabel = "Entries"
+		}
+		ticketList := ""
+		for _, s := range group.Serials {
+			ticketList += "\n" + s
+		}
+		msg := "CarPark payment confirmed!\nWinBig " + entryLabel + ":" + ticketList + "\nDraw: " + drawDateLabel + "\nGood luck!"
+		sent := bulkSendMNotifySMS(phone, msg) == nil
+		for _, s := range group.Serials {
+			sentMap[s] = sent
+		}
+		if sent {
+			sentCount += len(group.Serials)
+		}
+	}
+
+	type result struct {
+		Phone        string `json:"phone"`
+		SerialNumber string `json:"serial_number"`
+		SMSSent      bool   `json:"sms_sent"`
+	}
+	results := make([]result, 0, len(req.Tickets))
+	for _, t := range req.Tickets {
+		results = append(results, result{Phone: t.Phone, SerialNumber: t.SerialNumber, SMSSent: sentMap[t.SerialNumber]})
+	}
+
+	return response.Success(w, http.StatusOK, "SMS sent", map[string]interface{}{
+		"total":    len(req.Tickets),
+		"sms_sent": sentCount,
+		"results":  results,
+	})
+}
+
 // BulkUploadBySchedule creates tickets directly for a game schedule — no draw required.
 // The draw is only needed at draw execution time, not at ticket creation time.
 // POST /api/v1/admin/schedules/{scheduleId}/tickets/bulk-upload

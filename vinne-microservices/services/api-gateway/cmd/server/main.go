@@ -520,6 +520,7 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	adminGroup.GET("/draws/{id}/winning-numbers", drawHandler.GetWinningNumbers)
 	adminGroup.GET("/draws/{id}/tickets", drawHandler.GetDrawTickets)
 	adminGroup.POST("/draws/{id}/tickets/bulk-upload", drawHandler.BulkUploadTickets)
+	adminGroup.POST("/draws/{id}/tickets/resend-sms", drawHandler.ResendSMS)
 	adminGroup.POST("/schedules/{scheduleId}/tickets/bulk-upload", drawHandler.BulkUploadBySchedule)
 	adminGroup.POST("/draws/{id}/record-physical", drawHandler.RecordPhysicalDraw)
 

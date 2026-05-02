@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -14,6 +14,8 @@ import {
   Upload,
   MessageSquare,
   XCircle,
+  Send,
+  Loader2,
 } from 'lucide-react'
 import { isPast } from 'date-fns'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -145,6 +147,16 @@ const DrawDetails: React.FC = () => {
   const [machineNumbersDuplicates, setMachineNumbersDuplicates] = useState(false)
   const [selectedTicket, setSelectedTicket] = useState<Record<string, unknown> | null>(null)
 
+  // Quick test draw state
+  const [quickTestRunning, setQuickTestRunning] = useState(false)
+  const [quickTestStep, setQuickTestStep] = useState('')
+
+  // Tickets tab filter + SMS state
+  const [serialSearch, setSerialSearch] = useState('')
+  const [issuerTypeFilter, setIssuerTypeFilter] = useState<'all' | 'USSD' | 'ADMIN'>('all')
+  const [smsSending, setSmsSending] = useState(false)
+  const [smsResults, setSmsResults] = useState<Record<string, boolean>>({})
+
   // Bulk upload state
   const [bulkRawText, setBulkRawText] = useState('')
   const [bulkParsed, setBulkParsed] = useState<{ phone: string; name: string; quantity: number }[]>([])
@@ -180,6 +192,49 @@ const DrawDetails: React.FC = () => {
       }),
     enabled: !!draw,
   })
+
+  const filteredTickets = useMemo(() => {
+    const all = (tickets?.tickets ?? []) as Record<string, unknown>[]
+    return all.filter(t => {
+      const serial = ((t.serial_number as string) || '').toLowerCase()
+      const issuer = ((t.issuer_type as string) || '').toUpperCase()
+      const matchesSerial = !serialSearch || serial.includes(serialSearch.toLowerCase())
+      const matchesIssuer = issuerTypeFilter === 'all' || issuer === issuerTypeFilter
+      return matchesSerial && matchesIssuer
+    })
+  }, [tickets?.tickets, serialSearch, issuerTypeFilter])
+
+  const sendBulkSMS = async () => {
+    if (!filteredTickets.length) return
+    setSmsSending(true)
+    setSmsResults({})
+    try {
+      const token = localStorage.getItem('access_token')
+      const apiBase = import.meta.env.VITE_API_URL || '/api/v1'
+      const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/resend-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          tickets: filteredTickets.map(t => ({
+            phone: t.customer_phone as string,
+            serial_number: t.serial_number as string,
+          })),
+        }),
+      })
+      const data = await res.json()
+      const map: Record<string, boolean> = {}
+      for (const r of data?.data?.results ?? []) map[r.serial_number] = r.sms_sent
+      setSmsResults(map)
+      toast({
+        title: 'SMS Sent',
+        description: `${data?.data?.sms_sent ?? 0} of ${data?.data?.total ?? 0} messages delivered`,
+      })
+    } catch {
+      toast({ title: 'SMS Error', description: 'Failed to send SMS', variant: 'destructive' })
+    } finally {
+      setSmsSending(false)
+    }
+  }
 
   // Countdown timer for in-progress draws
   useEffect(() => {
@@ -383,6 +438,31 @@ const DrawDetails: React.FC = () => {
       })
     },
   })
+
+  const runQuickTest = async () => {
+    const totalTickets = tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 1
+    setQuickTestRunning(true)
+    setQuickTestStep('Initializing draw...')
+    try {
+      await drawService.prepareDraw(drawId)
+      setQuickTestStep('Locking tickets...')
+      await drawService.completeDrawPreparation(drawId)
+      setQuickTestStep('Selecting winner...')
+      await winnerSelectionService.executeCryptographicSelection(drawId, Number(totalTickets), 1)
+      setQuickTestStep('Committing results...')
+      await drawService.commitDrawResults(drawId)
+      queryClient.invalidateQueries({ queryKey: ['draw', drawId] })
+      queryClient.invalidateQueries({ queryKey: ['draw-tickets', drawId] })
+      setQuickTestStep('Done! ✅')
+      toast({ title: '🎉 Test draw complete!', description: 'Winner selected. Open Draw Reveal to see the result.' })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setQuickTestStep(`Error: ${msg}`)
+      toast({ title: 'Test draw failed', description: msg, variant: 'destructive' })
+    } finally {
+      setQuickTestRunning(false)
+    }
+  }
 
   const handleSaveMachineNumbers = () => {
     // Validation: check if all numbers are filled
@@ -1171,6 +1251,21 @@ const DrawDetails: React.FC = () => {
                   >
                     Initialize Draw Execution
                   </Button>
+                  <div className="border border-orange-300 rounded-lg p-4 bg-orange-50 space-y-2">
+                    <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">⚠️ Test Mode — Run Full Draw Automatically</p>
+                    <p className="text-xs text-orange-600">Chains all stages (prepare → lock → select winner → commit) in one click. Use only for test draws.</p>
+                    <Button
+                      size="sm"
+                      onClick={runQuickTest}
+                      disabled={quickTestRunning}
+                      className="bg-orange-500 hover:bg-orange-600 text-white w-full"
+                    >
+                      {quickTestRunning ? `⏳ ${quickTestStep}` : '🚀 Run Full Test Draw'}
+                    </Button>
+                    {quickTestStep && !quickTestRunning && (
+                      <p className="text-xs text-orange-700 font-mono">{quickTestStep}</p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1774,6 +1869,102 @@ const DrawDetails: React.FC = () => {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
+
+          {/* Winner Card — visible once winner is selected */}
+          {draw?.stage?.result_calculation_data?.winning_tickets?.length > 0 && (() => {
+            const wt = draw.stage.result_calculation_data.winning_tickets[0] as Record<string, unknown>
+            const serial = wt.serial_number as string
+            const ticketId = wt.ticket_id as string
+            const fullTicket = tickets?.tickets?.find(
+              (t: Ticket) => t.serial_number === serial || (t.id as string) === ticketId
+            )
+            const bulkName = (wt.retailer_id as string)?.startsWith('admin-bulk:')
+              ? (wt.retailer_id as string).slice('admin-bulk:'.length)
+              : null
+            const name = (fullTicket?.customer_name as string) ||
+              bulkName ||
+              ((fullTicket?.issuer_id as string)?.startsWith('admin-bulk:')
+                ? (fullTicket.issuer_id as string).slice('admin-bulk:'.length)
+                : null)
+            const phone = fullTicket?.customer_phone as string
+            const email = fullTicket?.customer_email as string
+            return (
+              <Card className="border-2 border-yellow-400 bg-yellow-50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-full bg-yellow-400 flex items-center justify-center shadow">
+                      <Trophy className="h-6 w-6 text-yellow-900" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-yellow-900 text-xl">Winner Selected</CardTitle>
+                      <CardDescription className="text-yellow-700">
+                        Draw #{draw.draw_number} — {draw.game_name}
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Winning ticket */}
+                  <div className="rounded-lg bg-yellow-400/30 border border-yellow-400 p-4 text-center">
+                    <p className="text-xs uppercase tracking-widest text-yellow-800 mb-1">Winning Ticket</p>
+                    <p className="text-3xl font-bold font-mono text-yellow-900">{serial}</p>
+                  </div>
+
+                  {/* Player details */}
+                  <div className="rounded-md border border-yellow-200 bg-white overflow-hidden">
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {name && (
+                          <tr className="border-b border-yellow-100">
+                            <td className="p-3 text-muted-foreground w-28 font-medium">Name</td>
+                            <td className="p-3 font-semibold">{name}</td>
+                          </tr>
+                        )}
+                        {phone ? (
+                          <tr className="border-b border-yellow-100">
+                            <td className="p-3 text-muted-foreground font-medium">Phone</td>
+                            <td className="p-3 font-mono">{phone}</td>
+                          </tr>
+                        ) : ticketsLoading ? (
+                          <tr className="border-b border-yellow-100">
+                            <td className="p-3 text-muted-foreground font-medium">Phone</td>
+                            <td className="p-3 text-muted-foreground text-xs italic">Loading...</td>
+                          </tr>
+                        ) : null}
+                        {email && (
+                          <tr className="border-b border-yellow-100">
+                            <td className="p-3 text-muted-foreground font-medium">Email</td>
+                            <td className="p-3">{email}</td>
+                          </tr>
+                        )}
+                        {!name && !phone && !email && !ticketsLoading && (
+                          <tr>
+                            <td colSpan={2} className="p-3 text-muted-foreground text-xs italic text-center">
+                              No player details on file for this ticket.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* View ticket button */}
+                  {fullTicket && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-yellow-400 text-yellow-800 hover:bg-yellow-100"
+                      onClick={() => setSelectedTicket(fullTicket as Record<string, unknown>)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      View Full Ticket Details
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })()}
+
           <Card>
             <CardHeader>
               <CardTitle>Draw Information</CardTitle>
@@ -1853,13 +2044,40 @@ const DrawDetails: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="mb-4">
+              <div className="mb-4 flex flex-wrap gap-3 items-center">
                 <Input
-                  placeholder="Filter by issuer ID (retailer/agent)..."
-                  value={ticketFilter}
-                  onChange={e => setTicketFilter(e.target.value)}
-                  className="max-w-sm"
+                  placeholder="Search by entry number..."
+                  value={serialSearch}
+                  onChange={e => setSerialSearch(e.target.value)}
+                  className="max-w-[220px]"
                 />
+                <Select value={issuerTypeFilter} onValueChange={v => setIssuerTypeFilter(v as 'all' | 'USSD' | 'ADMIN')}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Filter by issuer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Issuers</SelectItem>
+                    <SelectItem value="USSD">USSD</SelectItem>
+                    <SelectItem value="ADMIN">Admin / Bulk</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground ml-1">{filteredTickets.length} entries</span>
+                <div className="ml-auto flex items-center gap-2">
+                  {Object.keys(smsResults).length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {Object.values(smsResults).filter(Boolean).length}/{Object.keys(smsResults).length} sent
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={smsSending || filteredTickets.length === 0}
+                    onClick={sendBulkSMS}
+                  >
+                    {smsSending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                    Send SMS ({filteredTickets.length})
+                  </Button>
+                </div>
               </div>
               <div className="rounded-md border">
                 <Table>
@@ -1888,14 +2106,14 @@ const DrawDetails: React.FC = () => {
                           Loading tickets...
                         </TableCell>
                       </TableRow>
-                    ) : !tickets?.tickets?.length ? (
+                    ) : !filteredTickets.length ? (
                       <TableRow>
                         <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
-                          No tickets found for this draw.
+                          No entries found.
                         </TableCell>
                       </TableRow>
                     ) : (
-                    tickets?.tickets?.map((ticket: Record<string, unknown>) => (
+                    filteredTickets.map((ticket: Record<string, unknown>) => (
                       <TableRow key={ticket.id as string} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTicket(ticket)}>
                             {/* Ticket Number */}
                             <TableCell className="font-mono">
@@ -2121,9 +2339,16 @@ const DrawDetails: React.FC = () => {
                               </Badge>
                             </TableCell>
                             <TableCell onClick={e => e.stopPropagation()}>
-                              <Button variant="outline" size="sm" onClick={() => setSelectedTicket(ticket)}>
-                                <Eye className="h-4 w-4" />
-                              </Button>
+                              <div className="flex items-center gap-1.5">
+                                <Button variant="outline" size="sm" onClick={() => setSelectedTicket(ticket)}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {Object.keys(smsResults).length > 0 && (
+                                  smsResults[ticket.serial_number as string]
+                                    ? <CheckCircle className="h-4 w-4 text-green-500" title="SMS sent" />
+                                    : <XCircle className="h-4 w-4 text-red-400" title="SMS failed" />
+                                )}
+                              </div>
                             </TableCell>
                       </TableRow>
                     ))
