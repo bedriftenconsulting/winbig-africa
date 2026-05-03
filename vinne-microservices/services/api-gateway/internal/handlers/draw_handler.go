@@ -18,6 +18,7 @@ import (
 	"github.com/randco/randco-microservices/services/api-gateway/internal/response"
 	"github.com/randco/randco-microservices/services/api-gateway/internal/router"
 	"github.com/randco/randco-microservices/shared/common/logger"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -25,14 +26,79 @@ import (
 type drawHandler struct {
 	grpcManager *grpc.ClientManager
 	log         logger.Logger
+	redis       *redis.Client
 }
 
 // NewDrawHandler creates a new draw handler
-func NewDrawHandler(grpcManager *grpc.ClientManager, log logger.Logger) DrawHandler {
+func NewDrawHandler(grpcManager *grpc.ClientManager, log logger.Logger, redisClient *redis.Client) DrawHandler {
 	return &drawHandler{
 		grpcManager: grpcManager,
 		log:         log,
+		redis:       redisClient,
 	}
+}
+
+func drawExclusionKey(drawID string) string {
+	return "draw:exclusions:" + drawID
+}
+
+// GetDrawExclusions returns all excluded phone numbers for a draw
+func (h *drawHandler) GetDrawExclusions(w http.ResponseWriter, r *http.Request) error {
+	drawID := router.GetParam(r, "id")
+	if drawID == "" {
+		return response.ValidationError(w, "draw_id is required", nil)
+	}
+	if h.redis == nil {
+		return response.Success(w, http.StatusOK, "exclusions retrieved", map[string]interface{}{"phones": []string{}})
+	}
+	phones, err := h.redis.SMembers(r.Context(), drawExclusionKey(drawID)).Result()
+	if err != nil && err != redis.Nil {
+		h.log.Error("Failed to get draw exclusions", "error", err)
+		return response.Success(w, http.StatusOK, "exclusions retrieved", map[string]interface{}{"phones": []string{}})
+	}
+	if phones == nil {
+		phones = []string{}
+	}
+	return response.Success(w, http.StatusOK, "exclusions retrieved", map[string]interface{}{"phones": phones})
+}
+
+// AddDrawExclusion adds a phone number to the exclusion list for a draw
+func (h *drawHandler) AddDrawExclusion(w http.ResponseWriter, r *http.Request) error {
+	drawID := router.GetParam(r, "id")
+	if drawID == "" {
+		return response.ValidationError(w, "draw_id is required", nil)
+	}
+	var req struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Phone == "" {
+		return response.ValidationError(w, "phone is required", nil)
+	}
+	if h.redis == nil {
+		return response.Success(w, http.StatusOK, "exclusion added", map[string]interface{}{"added": true})
+	}
+	if err := h.redis.SAdd(r.Context(), drawExclusionKey(drawID), req.Phone).Err(); err != nil {
+		h.log.Error("Failed to add draw exclusion", "error", err)
+		return response.InternalError(w, "Failed to add exclusion")
+	}
+	return response.Success(w, http.StatusOK, "exclusion added", map[string]interface{}{"added": true, "phone": req.Phone})
+}
+
+// RemoveDrawExclusion removes a phone number from the exclusion list for a draw
+func (h *drawHandler) RemoveDrawExclusion(w http.ResponseWriter, r *http.Request) error {
+	drawID := router.GetParam(r, "id")
+	phone := router.GetParam(r, "phone")
+	if drawID == "" || phone == "" {
+		return response.ValidationError(w, "draw_id and phone are required", nil)
+	}
+	if h.redis == nil {
+		return response.Success(w, http.StatusOK, "exclusion removed", map[string]interface{}{"removed": true})
+	}
+	if err := h.redis.SRem(r.Context(), drawExclusionKey(drawID), phone).Err(); err != nil {
+		h.log.Error("Failed to remove draw exclusion", "error", err)
+		return response.InternalError(w, "Failed to remove exclusion")
+	}
+	return response.Success(w, http.StatusOK, "exclusion removed", map[string]interface{}{"removed": true, "phone": phone})
 }
 
 // GetDraw retrieves a single draw by ID

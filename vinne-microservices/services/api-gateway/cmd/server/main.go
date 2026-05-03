@@ -501,7 +501,7 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	adminGroup.PUT("/games/{id}/rules", gameHandler.UpdateGameRules)
 
 	// Draw Service endpoints (admin only)
-	drawHandler := handlers.NewDrawHandler(grpcManager, log)
+	drawHandler := handlers.NewDrawHandler(grpcManager, log, redisClient)
 	adminGroup.POST("/draws", drawHandler.CreateDraw)
 	adminGroup.GET("/draws", drawHandler.ListDraws)
 	adminGroup.GET("/draws/{id}", drawHandler.GetDraw)
@@ -523,6 +523,9 @@ func setupRoutes(r *router.Router, grpcManager *grpc.ClientManager, jwtService j
 	adminGroup.POST("/draws/{id}/tickets/resend-sms", drawHandler.ResendSMS)
 	adminGroup.POST("/schedules/{scheduleId}/tickets/bulk-upload", drawHandler.BulkUploadBySchedule)
 	adminGroup.POST("/draws/{id}/record-physical", drawHandler.RecordPhysicalDraw)
+	adminGroup.GET("/draws/{id}/exclusions", drawHandler.GetDrawExclusions)
+	adminGroup.POST("/draws/{id}/exclusions", drawHandler.AddDrawExclusion)
+	adminGroup.DELETE("/draws/{id}/exclusions/{phone}", drawHandler.RemoveDrawExclusion)
 
 	// Player admin operations
 	adminGroup.GET("/players/{id}", playerHandler.GetPlayerByID)

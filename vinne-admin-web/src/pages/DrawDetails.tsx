@@ -51,6 +51,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import api from '@/lib/api'
 import { drawService, type Ticket, type BetLine } from '@/services/draws'
 import { winnerSelectionService, type WinnerSelectionConfig } from '@/services/winnerSelectionService'
 import { formatCurrency } from '@/lib/utils'
@@ -178,14 +179,30 @@ const DrawDetails: React.FC = () => {
     results: { phone: string; name: string; quantity: number; tickets: string[]; sms_sent: boolean; error?: string }[]
   } | null>(null)
 
-  // Winner exclusion list — stored in localStorage per draw, survives page reload
-  const [excludedPhones, setExcludedPhones] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem(`draw_exclusions_${drawId}`)
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
-  })
+  // Winner exclusion list — stored in backend (Redis) per draw, shared across all admins/devices
   const [excludeInput, setExcludeInput] = useState('')
+
+  const { data: exclusionsData, refetch: refetchExclusions } = useQuery({
+    queryKey: ['draw-exclusions', drawId],
+    queryFn: async () => {
+      const res = await api.get(`/admin/draws/${drawId}/exclusions`)
+      return (res.data?.data?.phones ?? []) as string[]
+    },
+    staleTime: 0,
+  })
+  const excludedPhones: string[] = exclusionsData ?? []
+
+  const addExclusionMutation = useMutation({
+    mutationFn: (phone: string) => api.post(`/admin/draws/${drawId}/exclusions`, { phone }),
+    onSuccess: () => { refetchExclusions(); setExcludeInput('') },
+    onError: () => toast({ title: 'Failed to add exclusion', variant: 'destructive' }),
+  })
+
+  const removeExclusionMutation = useMutation({
+    mutationFn: (phone: string) => api.delete(`/admin/draws/${drawId}/exclusions/${encodeURIComponent(phone)}`),
+    onSuccess: () => refetchExclusions(),
+    onError: () => toast({ title: 'Failed to remove exclusion', variant: 'destructive' }),
+  })
 
   const _normalizePhoneInput = (phone: string): string => {
     const digits = phone.replace(/\D/g, '')
@@ -205,17 +222,12 @@ const DrawDetails: React.FC = () => {
       toast({ title: 'Already in exclusion list', description: `${normalized} is already excluded`, variant: 'destructive' })
       return
     }
-    const updated = [...excludedPhones, normalized]
-    setExcludedPhones(updated)
-    localStorage.setItem(`draw_exclusions_${drawId}`, JSON.stringify(updated))
-    setExcludeInput('')
+    addExclusionMutation.mutate(normalized)
     toast({ title: 'Phone excluded', description: `${normalized} will be excluded from winner selection` })
   }
 
   const removeExcludedPhone = (phone: string) => {
-    const updated = excludedPhones.filter(p => p !== phone)
-    setExcludedPhones(updated)
-    localStorage.setItem(`draw_exclusions_${drawId}`, JSON.stringify(updated))
+    removeExclusionMutation.mutate(phone)
   }
 
   // Fetch draw details
