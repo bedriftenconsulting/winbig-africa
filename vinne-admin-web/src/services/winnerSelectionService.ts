@@ -178,11 +178,17 @@ class WinnerSelectionService {
    * random.org picks a number between 1 and totalTickets (inclusive).
    * That number is the 1-based position of the winning ticket in the draw's
    * ticket list — completely external, no local algorithm interference.
+   *
+   * When excludedPhones is provided, the full ticket list is fetched and any
+   * ticket belonging to an excluded phone is removed before picking positions.
+   * The submitted position(s) are always valid 1-based indices into the server's
+   * ticket list, so the backend needs no changes.
    */
   async executeGoogleRNGSelection(
     drawId: string,
     _totalTickets: number,
-    maxWinners: number = 1
+    maxWinners: number = 1,
+    excludedPhones: string[] = []
   ): Promise<WinnerSelectionResult> {
     // 1. Get total ticket count for this draw
     const ticketsResp = await api.get(`/admin/draws/${drawId}/tickets`, {
@@ -194,52 +200,45 @@ class WinnerSelectionService {
       throw new Error('No tickets found for this draw')
     }
 
-    const count = Math.min(maxWinners, totalTickets)
-
-    // 2. Ask random.org for `count` unique integers in [1, totalTickets]
-    //    Each integer is the 1-based position of a winning ticket
     let winningPositions: number[]
-    const apiKey = import.meta.env.VITE_RANDOM_ORG_API_KEY as string | undefined
 
-    if (apiKey) {
-      try {
-        const rngResp = await fetch('https://api.random.org/json-rpc/2/invoke', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'generateIntegers',
-            params: {
-              apiKey,
-              n: count,
-              min: 1,
-              max: totalTickets,
-              replacement: false, // no duplicate winners
-            },
-            id: Date.now(),
-          }),
-        })
+    if (excludedPhones.length > 0) {
+      // Fetch the full ticket list so we know which positions to skip
+      const allResp = await api.get(`/admin/draws/${drawId}/tickets`, {
+        params: { limit: totalTickets + 100 },
+      })
+      const allTickets: Record<string, unknown>[] = allResp.data?.data?.tickets || []
 
-        if (!rngResp.ok) throw new Error(`random.org HTTP ${rngResp.status}`)
-        const rngJson = await rngResp.json()
-        if (rngJson.error) throw new Error(`random.org: ${rngJson.error.message}`)
+      const normalizedExclusions = new Set(
+        excludedPhones.map(p => this._normalizePhone(p)).filter(Boolean)
+      )
 
-        winningPositions = rngJson.result.random.data as number[]
-        console.info(
-          `[WinnerSelection] random.org selected position(s) ${winningPositions} from ${totalTickets} tickets`,
-          `| bitsUsed: ${rngJson.result.bitsUsed}`,
-          `| completionTime: ${rngJson.result.random.completionTime}`
-        )
-      } catch (err) {
-        console.warn('[WinnerSelection] random.org failed, falling back to crypto.getRandomValues:', err)
-        winningPositions = this._cryptoPickPositions(totalTickets, count)
+      // Build 1-based positions of eligible (non-excluded) tickets
+      const eligiblePositions: number[] = allTickets
+        .map((t, idx) => ({ pos: idx + 1, phone: this._normalizePhone((t.customer_phone as string) || '') }))
+        .filter(({ phone }) => !normalizedExclusions.has(phone))
+        .map(({ pos }) => pos)
+
+      if (eligiblePositions.length === 0) {
+        throw new Error('No eligible tickets remain after applying exclusions')
       }
+
+      const count = Math.min(maxWinners, eligiblePositions.length)
+      // Pick `count` random indices into the eligible positions array, then map back
+      const pickedRanks = await this._getRngNumbers(1, eligiblePositions.length, count)
+      winningPositions = pickedRanks.map(r => eligiblePositions[r - 1])
+
+      console.info(
+        `[WinnerSelection] Exclusions: ${normalizedExclusions.size} phone(s) excluded,`,
+        `${eligiblePositions.length} of ${totalTickets} eligible.`,
+        `Picked positions: ${winningPositions}`
+      )
     } else {
-      console.warn('[WinnerSelection] VITE_RANDOM_ORG_API_KEY not set — using crypto.getRandomValues fallback')
-      winningPositions = this._cryptoPickPositions(totalTickets, count)
+      const count = Math.min(maxWinners, totalTickets)
+      winningPositions = await this._getRngNumbers(1, totalTickets, count)
     }
 
-    // 3. Submit the winning position(s) to the draw service
+    // 2. Submit the winning position(s) to the draw service
     //    The draw service uses the position as a 1-based index into the ticket list
     const response = await api.post(`/admin/draws/${drawId}/execute`, {
       action: 'submit_verification',
@@ -248,9 +247,43 @@ class WinnerSelectionService {
     return response.data?.data
   }
 
-  /** Cryptographically secure position picker (fallback only) */
-  private _cryptoPickPositions(totalTickets: number, count: number): number[] {
-    const pool = Array.from({ length: totalTickets }, (_, i) => i + 1) // 1-based
+  /** Get `count` unique random integers in [min, max] via random.org, falling back to crypto. */
+  private async _getRngNumbers(min: number, max: number, count: number): Promise<number[]> {
+    const apiKey = import.meta.env.VITE_RANDOM_ORG_API_KEY as string | undefined
+    if (apiKey) {
+      try {
+        const rngResp = await fetch('https://api.random.org/json-rpc/2/invoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'generateIntegers',
+            params: { apiKey, n: count, min, max, replacement: false },
+            id: Date.now(),
+          }),
+        })
+        if (!rngResp.ok) throw new Error(`random.org HTTP ${rngResp.status}`)
+        const rngJson = await rngResp.json()
+        if (rngJson.error) throw new Error(`random.org: ${rngJson.error.message}`)
+        const values = rngJson.result.random.data as number[]
+        console.info(
+          `[WinnerSelection] random.org selected ${values} from [${min}, ${max}]`,
+          `| bitsUsed: ${rngJson.result.bitsUsed}`,
+          `| completionTime: ${rngJson.result.random.completionTime}`
+        )
+        return values
+      } catch (err) {
+        console.warn('[WinnerSelection] random.org failed, falling back to crypto.getRandomValues:', err)
+      }
+    } else {
+      console.warn('[WinnerSelection] VITE_RANDOM_ORG_API_KEY not set — using crypto.getRandomValues fallback')
+    }
+    return this._cryptoPickInRange(min, max, count)
+  }
+
+  /** Cryptographically secure picker for `count` unique integers in [min, max]. */
+  private _cryptoPickInRange(min: number, max: number, count: number): number[] {
+    const pool = Array.from({ length: max - min + 1 }, (_, i) => min + i)
     const selected: number[] = []
     for (let i = 0; i < count && pool.length > 0; i++) {
       const arr = new Uint32Array(1)
@@ -262,15 +295,31 @@ class WinnerSelectionService {
     return selected
   }
 
+  /** Normalize a Ghana phone number to 233XXXXXXXXX (12 digits). Returns '' if unparseable. */
+  private _normalizePhone(phone: string): string {
+    if (!phone) return ''
+    const digits = phone.replace(/\D/g, '')
+    if (digits.startsWith('233') && digits.length === 12) return digits
+    if (digits.startsWith('0') && digits.length === 10) return '233' + digits.slice(1)
+    if (digits.length === 9) return '233' + digits
+    return digits
+  }
+
+  /** @deprecated Use _cryptoPickInRange instead */
+  private _cryptoPickPositions(totalTickets: number, count: number): number[] {
+    return this._cryptoPickInRange(1, totalTickets, count)
+  }
+
   /**
    * Execute winner selection using cryptographically secure randomization.
    */
   async executeCryptographicSelection(
     drawId: string,
     totalTickets: number,
-    maxWinners: number = 1
+    maxWinners: number = 1,
+    excludedPhones: string[] = []
   ): Promise<WinnerSelectionResult> {
-    return this.executeGoogleRNGSelection(drawId, totalTickets, maxWinners)
+    return this.executeGoogleRNGSelection(drawId, totalTickets, maxWinners, excludedPhones)
   }
 
   /**

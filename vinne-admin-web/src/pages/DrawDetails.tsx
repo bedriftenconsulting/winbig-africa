@@ -16,6 +16,8 @@ import {
   XCircle,
   Send,
   Loader2,
+  ShieldOff,
+  Plus,
 } from 'lucide-react'
 import { isPast } from 'date-fns'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -175,6 +177,46 @@ const DrawDetails: React.FC = () => {
     sms_sent: number
     results: { phone: string; name: string; quantity: number; tickets: string[]; sms_sent: boolean; error?: string }[]
   } | null>(null)
+
+  // Winner exclusion list — stored in localStorage per draw, survives page reload
+  const [excludedPhones, setExcludedPhones] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(`draw_exclusions_${drawId}`)
+      return stored ? JSON.parse(stored) : []
+    } catch { return [] }
+  })
+  const [excludeInput, setExcludeInput] = useState('')
+
+  const _normalizePhoneInput = (phone: string): string => {
+    const digits = phone.replace(/\D/g, '')
+    if (digits.startsWith('233') && digits.length === 12) return digits
+    if (digits.startsWith('0') && digits.length === 10) return '233' + digits.slice(1)
+    if (digits.length === 9) return '233' + digits
+    return digits
+  }
+
+  const addExcludedPhone = () => {
+    const normalized = _normalizePhoneInput(excludeInput.trim())
+    if (!normalized || normalized.length < 9) {
+      toast({ title: 'Invalid phone number', variant: 'destructive' })
+      return
+    }
+    if (excludedPhones.includes(normalized)) {
+      toast({ title: 'Already in exclusion list', description: `${normalized} is already excluded`, variant: 'destructive' })
+      return
+    }
+    const updated = [...excludedPhones, normalized]
+    setExcludedPhones(updated)
+    localStorage.setItem(`draw_exclusions_${drawId}`, JSON.stringify(updated))
+    setExcludeInput('')
+    toast({ title: 'Phone excluded', description: `${normalized} will be excluded from winner selection` })
+  }
+
+  const removeExcludedPhone = (phone: string) => {
+    const updated = excludedPhones.filter(p => p !== phone)
+    setExcludedPhones(updated)
+    localStorage.setItem(`draw_exclusions_${drawId}`, JSON.stringify(updated))
+  }
 
   // Fetch draw details
   const { data: draw, isLoading: drawLoading } = useQuery({
@@ -347,11 +389,11 @@ const DrawDetails: React.FC = () => {
   const executeWinnerSelectionMutation = useMutation({
     mutationFn: async () => {
       const totalTickets = tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0
-      
+
       if (winnerSelectionMethod === 'google_rng') {
-        return winnerSelectionService.executeGoogleRNGSelection(drawId, totalTickets, maxWinners)
+        return winnerSelectionService.executeGoogleRNGSelection(drawId, totalTickets, maxWinners, excludedPhones)
       } else {
-        return winnerSelectionService.executeCryptographicSelection(drawId, totalTickets, maxWinners)
+        return winnerSelectionService.executeCryptographicSelection(drawId, totalTickets, maxWinners, excludedPhones)
       }
     },
     onSuccess: (result) => {
@@ -677,13 +719,13 @@ const DrawDetails: React.FC = () => {
         {/* Game Title */}
         <div className="text-center mb-4">
           <h3 className="font-bold text-base">{draw?.game_name || 'LOTTERY GAME'}</h3>
-          <p className="text-xs text-gray-600">Official Ticket</p>
+          <p className="text-xs text-gray-600">Draw Entry</p>
         </div>
 
         {/* Ticket Details */}
         <div className="space-y-2 mb-4">
           <div className="flex justify-between">
-            <span>TICKET NO:</span>
+            <span>ENTRY NO:</span>
             <span className="font-bold">{ticket.ticket_number || ticket.serial_number}</span>
           </div>
           <div className="flex justify-between">
@@ -832,7 +874,7 @@ const DrawDetails: React.FC = () => {
 
         {/* Footer */}
         <div className="border-t border-dashed border-gray-300 pt-4 text-center text-xs text-gray-500">
-          <p>Keep this ticket safe</p>
+          <p>Keep this entry safe</p>
           <p>Valid for 90 days from draw date</p>
           {ticket.status === 'won' && (
             <p className="text-green-600 font-bold mt-2">*** WINNER ***</p>
@@ -928,11 +970,11 @@ const DrawDetails: React.FC = () => {
             </thead>
             <tbody>
               <tr className="border-b">
-                <td className="p-3 text-muted-foreground">Ticket ID</td>
+                <td className="p-3 text-muted-foreground">Entry ID</td>
                 <td className="p-3 font-mono">{ticket.ticket_id || ticket.id}</td>
               </tr>
               <tr className="border-b">
-                <td className="p-3 text-muted-foreground">Ticket Number</td>
+                <td className="p-3 text-muted-foreground">Entry Number</td>
                 <td className="p-3 font-mono font-bold">
                   {ticket.ticket_number || ticket.serial_number}
                 </td>
@@ -1181,7 +1223,7 @@ const DrawDetails: React.FC = () => {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tickets</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Entries</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -1202,7 +1244,7 @@ const DrawDetails: React.FC = () => {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tickets</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Entries</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -1219,7 +1261,7 @@ const DrawDetails: React.FC = () => {
               })()}
             </div>
             <p className="text-xs text-muted-foreground">
-              Total ticket entries
+              Total draw entries
             </p>
           </CardContent>
         </Card>
@@ -1356,7 +1398,7 @@ const DrawDetails: React.FC = () => {
                     {draw.stage?.preparation_data && (
                       <div className="ml-10 p-3 bg-gray-50 rounded-lg text-sm">
                         <div className="grid grid-cols-2 gap-2">
-                          <div>Total Tickets: {draw.stage.preparation_data.tickets_locked}</div>
+                          <div>Total Entries: {draw.stage.preparation_data.tickets_locked}</div>
                           <div>
                             Sales Locked: {draw.stage.preparation_data.sales_locked ? 'Yes' : 'No'}
                           </div>
@@ -1406,7 +1448,7 @@ const DrawDetails: React.FC = () => {
                           <div className="flex gap-2">
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 w-full">
                               <h4 className="font-semibold text-blue-900 mb-1">
-                                Select Winning Ticket
+                                Select Winning Entry
                               </h4>
                               <p className="text-xs text-blue-700 mb-3">
                                 Winner is selected using{' '}
@@ -1433,20 +1475,28 @@ const DrawDetails: React.FC = () => {
                                     className="w-full mt-1"
                                   />
                                   <p className="text-xs text-blue-700 mt-1">
-                                    Number of winning tickets to randomly select
+                                    Number of winning entries to randomly select
                                   </p>
                                 </div>
 
-                                <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
+                                <div className="bg-yellow-50 border border-yellow-200 rounded p-3 space-y-1">
                                   <div className="flex items-center gap-2">
                                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                                     <p className="text-sm text-yellow-800">
-                                      <strong>Eligible Tickets:</strong> {tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0}
+                                      <strong>Eligible Entries:</strong> {tickets?.total || draw?.total_tickets_sold || statistics?.total_tickets || 0}
                                     </p>
                                   </div>
-                                  <p className="text-xs text-yellow-700 mt-1">
-                                    Only tickets with a successful payment are eligible. Failed or pending payments are excluded.
+                                  <p className="text-xs text-yellow-700">
+                                    Only entries with a successful payment are eligible.
                                   </p>
+                                  {excludedPhones.length > 0 && (
+                                    <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-yellow-200">
+                                      <ShieldOff className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                      <p className="text-xs text-red-700 font-medium">
+                                        {excludedPhones.length} phone number{excludedPhones.length > 1 ? 's' : ''} excluded — their entries cannot win.
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
 
                                 <Button
@@ -1609,12 +1659,12 @@ const DrawDetails: React.FC = () => {
                         draw.stage.result_calculation_data.winning_tickets.length > 0 ? (
                           <div className="border rounded-lg overflow-hidden">
                             <div className="px-4 py-2 bg-gray-50 border-b">
-                              <h4 className="font-semibold text-sm">Winning Tickets</h4>
+                              <h4 className="font-semibold text-sm">Winning Entries</h4>
                             </div>
                             <Table>
                               <TableHeader>
                                 <TableRow className="text-xs">
-                                  <TableHead>Ticket Serial</TableHead>
+                                  <TableHead>Entry Serial</TableHead>
                                   {(draw.stage.result_calculation_data.winning_tickets[0]?.bet_type as string)?.toUpperCase() !== 'RAFFLE' && (
                                     <>
                                       <TableHead>Sale Date/Time</TableHead>
@@ -1625,7 +1675,7 @@ const DrawDetails: React.FC = () => {
                                   )}
                                   <TableHead>Draw Date/Time</TableHead>
                                   <TableHead>Game Type</TableHead>
-                                  <TableHead className="text-right">Ticket Price</TableHead>
+                                  <TableHead className="text-right">Entry Price</TableHead>
                                   <TableHead className="text-right">Prize</TableHead>
                                   <TableHead>Phone</TableHead>
                                   <TableHead>Status</TableHead>
@@ -1751,7 +1801,7 @@ const DrawDetails: React.FC = () => {
                                 Winning Breakdown by Bet Type
                               </h4>
                               <p className="text-xs text-muted-foreground mt-1">
-                                Individual ticket details not available for this draw
+                                Individual entry details not available for this draw
                               </p>
                             </div>
                             <Table>
@@ -1895,8 +1945,8 @@ const DrawDetails: React.FC = () => {
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="tickets">Tickets</TabsTrigger>
-          <TabsTrigger value="bulk-upload">Bulk Upload</TabsTrigger>
+          <TabsTrigger value="tickets">Entries</TabsTrigger>
+          <TabsTrigger value="bulk-upload">Add Entries</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -1997,6 +2047,63 @@ const DrawDetails: React.FC = () => {
             )
           })()}
 
+          {/* Winner Exclusion List */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldOff className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">Winner Exclusions</CardTitle>
+                  {excludedPhones.length > 0 && (
+                    <Badge variant="destructive" className="text-xs h-5 px-1.5">
+                      {excludedPhones.length}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <CardDescription className="text-xs mt-1">
+                Phone numbers listed here are ineligible to win this draw — e.g. organizers and staff.
+                Stored locally per draw and applied automatically at winner selection time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g. 0241234567 or 233241234567"
+                  value={excludeInput}
+                  onChange={e => setExcludeInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addExcludedPhone() }}
+                  className="flex-1 h-8 text-sm"
+                />
+                <Button size="sm" variant="outline" className="h-8 px-3" onClick={addExcludedPhone}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add
+                </Button>
+              </div>
+              {excludedPhones.length > 0 ? (
+                <div className="space-y-1.5">
+                  {excludedPhones.map(phone => (
+                    <div key={phone} className="flex items-center justify-between px-3 py-1.5 bg-red-50 border border-red-100 rounded-md">
+                      <span className="text-sm font-mono text-red-800">{phone}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-red-400 hover:text-red-700 hover:bg-red-100"
+                        onClick={() => removeExcludedPhone(phone)}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground py-1">
+                  No exclusions set. All eligible entries can win.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Draw Information</CardTitle>
@@ -2070,9 +2177,9 @@ const DrawDetails: React.FC = () => {
         <TabsContent value="tickets">
           <Card>
             <CardHeader>
-              <CardTitle>Tickets Sold</CardTitle>
+              <CardTitle>Draw Entries</CardTitle>
               <CardDescription>
-                Paid tickets for this draw. Only tickets with a completed payment are shown — failed and pending payments are excluded.
+                Paid draw entries. Only entries with a completed payment are shown — failed and pending payments are excluded.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -2115,7 +2222,7 @@ const DrawDetails: React.FC = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Ticket Number</TableHead>
+                      <TableHead>Entry Number</TableHead>
                       <TableHead>Sale Date/Time</TableHead>
                       <TableHead>Draw Date/Time</TableHead>
                       <TableHead>Issuer</TableHead>
@@ -2135,7 +2242,7 @@ const DrawDetails: React.FC = () => {
                     {ticketsLoading ? (
                       <TableRow>
                         <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
-                          Loading tickets...
+                          Loading entries...
                         </TableCell>
                       </TableRow>
                     ) : !filteredTickets.length ? (
@@ -2654,7 +2761,7 @@ const DrawDetails: React.FC = () => {
       <Dialog open={!!selectedTicket} onOpenChange={open => { if (!open) setSelectedTicket(null) }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Ticket Details</DialogTitle>
+            <DialogTitle>Entry Details</DialogTitle>
             <DialogDescription>
               Complete information for ticket {selectedTicket?.serial_number as string}
             </DialogDescription>

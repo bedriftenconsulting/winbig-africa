@@ -442,16 +442,6 @@ func (s *gameScheduleService) GenerateWeeklySchedule(ctx context.Context, weekSt
 		attribute.String("week_end", weekEnd.Format(time.RFC3339)),
 	)
 
-	// Clear only unplayed (scheduled) games for the week to prevent duplicates
-	// This preserves completed or in-progress games
-	fmt.Println("[GameScheduleService] Clearing existing unplayed schedules in week range")
-	if err := s.scheduleRepo.DeleteUnplayedSchedulesInTimeRange(ctx, weekStart, weekEnd); err != nil {
-		fmt.Printf("[GameScheduleService] ERROR: Failed to clear existing unplayed schedules: %v\n", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to clear existing unplayed schedules")
-		return nil, fmt.Errorf("failed to clear existing unplayed schedules: %w", err)
-	}
-
 	// Get all active/approved games
 	fmt.Println("[GameScheduleService] Fetching active games")
 	games, err := s.gameRepo.GetActiveGames(ctx)
@@ -471,6 +461,17 @@ func (s *gameScheduleService) GenerateWeeklySchedule(ctx context.Context, weekSt
 	var allSchedules []*models.GameSchedule
 
 	for _, game := range games {
+		// Skip if a non-cancelled schedule already exists for this game in this week —
+		// prevents duplicate draws when generation is triggered more than once.
+		exists, checkErr := s.scheduleRepo.HasScheduleForGameInRange(ctx, game.ID, weekStart, weekEnd)
+		if checkErr != nil {
+			fmt.Printf("[GameScheduleService] WARNING: could not check existing schedule for game %s: %v\n", game.Code, checkErr)
+		}
+		if exists {
+			fmt.Printf("[GameScheduleService] Skipping game %s — schedule already exists for this week\n", game.Code)
+			continue
+		}
+
 		fmt.Printf("[GameScheduleService] Generating schedules for game: id=%s, code=%s, frequency=%s\n", game.ID, game.Code, game.DrawFrequency)
 		schedules, err := s.generateGameSchedulesForWeek(ctx, game, weekStart)
 		if err != nil {

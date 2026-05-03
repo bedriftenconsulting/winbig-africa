@@ -52,7 +52,8 @@ interface Transaction {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-function detectGateway(phone: string): string {
+function detectGateway(phone: string | null | undefined): string {
+  if (!phone) return 'Hubtel MoMo'
   const p = phone.replace(/^\+233/, '0').replace(/^233/, '0')
   const prefix = p.slice(0, 3)
   if (['024', '054', '055', '059', '025'].includes(prefix)) return 'MTN MoMo'
@@ -63,11 +64,15 @@ function detectGateway(phone: string): string {
 
 function deriveType(tickets: UssdTicket[]): string {
   const accessCount = tickets.filter(t => t.game_type === 'ACCESS_PASS').length
-  const entryCount  = tickets.filter(t => t.game_type === 'DRAW_ENTRY').length
+  const entryCount  = tickets.filter(t =>
+    t.game_type === 'DRAW_ENTRY' ||
+    t.serial_number?.startsWith('WB-ENT-') ||
+    t.serial_number?.startsWith('CP-ENT-')
+  ).length
   if (accessCount === 1) return '1-Day Pass'
   if (accessCount === 2) return '2-Day Pass'
   if (entryCount > 0)   return `Extra WinBig (${entryCount})`
-  return 'Ticket Purchase'
+  return 'Purchase'
 }
 
 function buildPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
@@ -85,7 +90,7 @@ async function fetchCompletedTransactions(): Promise<Transaction[]> {
     while (true) {
       let batch: UssdTicket[] = []
       try {
-        const res = await api.get('/admin/tickets', { params: { page: String(page) } })
+        const res = await api.get('/admin/tickets', { params: { page: String(page), page_size: '100' }, timeout: 8000 })
         batch = res.data?.data?.tickets || res.data?.tickets || []
       } catch { break }
       // Filter USSD completed tickets only
@@ -103,10 +108,16 @@ async function fetchCompletedTransactions(): Promise<Transaction[]> {
       if (page > 30) break
     }
 
-    // Group by payment_ref
+    // Group by payment_ref; admin entries (null ref) grouped by phone + minute-bucket
     const byRef = new Map<string, UssdTicket[]>()
     for (const t of all) {
-      const ref = t.payment_ref
+      let ref: string
+      if (t.payment_ref) {
+        ref = t.payment_ref
+      } else {
+        const minuteBucket = Math.floor(new Date(t.created_at).getTime() / 60000)
+        ref = `admin::${t.customer_phone}::${minuteBucket}`
+      }
       if (!byRef.has(ref)) byRef.set(ref, [])
       byRef.get(ref)!.push(t)
     }
@@ -115,13 +126,14 @@ async function fetchCompletedTransactions(): Promise<Transaction[]> {
     const txns: Transaction[] = []
     for (const [ref, tickets] of byRef) {
       const rep = tickets[0]
+      const isAdmin = ref.startsWith('admin::')
       txns.push({
-        payment_ref:  ref,
+        payment_ref:  isAdmin ? '' : ref,
         momo_tx_id:   rep.payment_reference || '',
         type:         deriveType(tickets),
         phone:        rep.customer_phone,
         amount:       tickets.reduce((s, t) => s + Number(t.unit_price || 0), 0),
-        gateway:      detectGateway(rep.customer_phone),
+        gateway:      isAdmin ? 'Admin Upload' : detectGateway(rep.customer_phone),
         date:         rep.paid_at || rep.created_at,
         tickets,
       })
@@ -141,6 +153,7 @@ function GatewayBadge({ gateway }: { gateway: string }) {
     'Telecel Cash':     'bg-red-100 text-red-800 border-red-200',
     'AirtelTigo Money': 'bg-blue-100 text-blue-800 border-blue-200',
     'Hubtel MoMo':      'bg-purple-100 text-purple-800 border-purple-200',
+    'Admin Upload':     'bg-emerald-100 text-emerald-800 border-emerald-200',
   }
   return (
     <Badge className={colours[gateway] ?? 'bg-gray-100 text-gray-800'}>
@@ -178,9 +191,9 @@ export default function TransactionsModule() {
     if (search) {
       const s = search.toLowerCase()
       r = r.filter(t =>
-        t.payment_ref.toLowerCase().includes(s) ||
-        t.momo_tx_id.toLowerCase().includes(s) ||
-        t.phone.includes(s)
+        (t.payment_ref ?? '').toLowerCase().includes(s) ||
+        (t.momo_tx_id ?? '').toLowerCase().includes(s) ||
+        (t.phone ?? '').includes(s)
       )
     }
     return r
@@ -335,12 +348,12 @@ export default function TransactionsModule() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginated.map(tx => (
-                      <TableRow key={tx.payment_ref}>
-                        <TableCell className="font-mono text-xs text-muted-foreground max-w-[120px] truncate" title={tx.payment_ref}>
-                          {tx.payment_ref.slice(0, 12)}…
+                    {paginated.map((tx, idx) => (
+                      <TableRow key={tx.payment_ref ?? idx}>
+                        <TableCell className="font-mono text-xs text-muted-foreground max-w-[120px] truncate" title={tx.payment_ref ?? ''}>
+                          {tx.payment_ref ? tx.payment_ref.slice(0, 12) + '…' : '—'}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-green-700 max-w-[130px] truncate" title={tx.momo_tx_id}>
+                        <TableCell className="font-mono text-xs text-green-700 max-w-[130px] truncate" title={tx.momo_tx_id ?? ''}>
                           {tx.momo_tx_id ? tx.momo_tx_id.slice(0, 14) + '…' : '—'}
                         </TableCell>
                         <TableCell><TypeBadge type={tx.type} /></TableCell>

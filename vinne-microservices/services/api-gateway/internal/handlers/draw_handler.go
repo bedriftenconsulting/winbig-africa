@@ -164,6 +164,8 @@ func (h *drawHandler) ListDraws(w http.ResponseWriter, r *http.Request) error {
 		drawMap := map[string]interface{}{
 			"id":                     draw.Id,
 			"game_id":                draw.GameId,
+			"game_code":              draw.GameCode,
+			"game_schedule_id":       draw.GameScheduleId,
 			"draw_number":            draw.DrawNumber,
 			"game_name":              draw.GameName,
 			"draw_name":              draw.DrawName,

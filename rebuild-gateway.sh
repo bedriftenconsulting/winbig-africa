@@ -1,35 +1,33 @@
 #!/bin/bash
 set -e
-COMPOSE_DIR="/home/Suraj/vinne/vinne-microservices"
 
-echo "=== Pull latest code ==="
-cd "$COMPOSE_DIR"
-git pull origin main
+cd /home/suraj/vinne-microservices
 
-echo ""
-echo "=== Rebuild api-gateway ==="
-sudo docker-compose build api-gateway
+echo "=== Pulling latest code ==="
+git pull origin main 2>&1 | tail -5
 
 echo ""
-echo "=== Restart api-gateway ==="
-sudo docker stop vinne-microservices_api-gateway_1 2>/dev/null || true
-sudo docker rm vinne-microservices_api-gateway_1 2>/dev/null || true
-sudo docker-compose up -d --no-deps api-gateway
+echo "=== Rebuilding api-gateway ==="
+sudo docker compose build api-gateway 2>&1 | tail -20
 
 echo ""
-echo "=== Wait 8s ==="
-sleep 8
+echo "=== Restarting api-gateway ==="
+sudo docker compose up -d api-gateway
 
 echo ""
-echo "=== Health check ==="
-curl -sk https://api.winbig.bedriften.xyz/health
+echo "=== Waiting 5s for startup ==="
+sleep 5
 
 echo ""
-echo "=== Test schedule with tickets_sold ==="
-curl -sk "https://api.winbig.bedriften.xyz/api/v1/players/games/6d02ec42-d611-44d6-97e7-8dbcd69fd300/schedule" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-schedules = d.get('data', {}).get('schedules', [])
-for s in schedules:
-    print('schedule:', s.get('id','')[:8], 'tickets_sold:', s.get('tickets_sold', 'MISSING'))
-"
+echo "=== Gateway health check ==="
+curl -s http://localhost:4000/health || echo "no /health endpoint"
+
+echo ""
+echo "=== Recent gateway logs ==="
+sudo docker logs vinne-microservices_api-gateway_1 --since=30s 2>&1 | grep -v DEBUG | tail -15
+
+echo ""
+echo "=== Test reset-password (expect 400 not 500) ==="
+curl -s -X POST http://localhost:4000/api/v1/players/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number":"+233256826832","code":"000000","new_password":"test123"}' | python3 -m json.tool

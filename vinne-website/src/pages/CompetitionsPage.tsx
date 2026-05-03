@@ -19,7 +19,8 @@ const GameCard = ({ game, index = 0 }: { game: ApiGame; index?: number }) => {
         if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
         return next;
       })();
-  const { days, hours, minutes, seconds } = useCountdown(drawDate);
+  const { days, hours, minutes, seconds, total: timeTotal } = useCountdown(drawDate);
+  const isEnded = timeTotal === 0;
   const [ticketsSold, setTicketsSold] = useState<number>(0);
 
   useEffect(() => {
@@ -60,10 +61,16 @@ const GameCard = ({ game, index = 0 }: { game: ApiGame; index?: number }) => {
         ) : (
           <Trophy className="h-16 w-16 text-white/20" />
         )}
-        <span className="absolute top-3 left-3 bg-[hsl(22_100%_52%)] text-white px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse inline-block" />
-          CLOSES IN {timeLabel}
-        </span>
+        {isEnded ? (
+          <span className="absolute top-3 left-3 bg-gray-600 text-gray-200 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide">
+            DRAW ENDED
+          </span>
+        ) : (
+          <span className="absolute top-3 left-3 bg-[hsl(22_100%_52%)] text-white px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse inline-block" />
+            CLOSES IN {timeLabel}
+          </span>
+        )}
       </div>
 
       <div className="p-4">
@@ -75,13 +82,10 @@ const GameCard = ({ game, index = 0 }: { game: ApiGame; index?: number }) => {
           <span className="w-8 h-8 rounded-full bg-[hsl(22_100%_52%)] flex items-center justify-center text-white font-bold text-lg shadow">+</span>
         </div>
 
+
         {/* Ticket progress bar */}
         <div className="mt-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="flex items-center gap-1 text-xs text-gray-500">
-              <Users size={10} />
-              {ticketsSold.toLocaleString()} / {totalTickets.toLocaleString()} tickets
-            </span>
+          <div className="flex items-center justify-end mb-1.5">
             <span className={`text-xs font-bold ${isFilling ? "text-orange-500" : "text-gray-400"}`}>
               {pct}% sold
             </span>

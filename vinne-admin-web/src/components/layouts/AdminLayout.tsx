@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -75,6 +75,7 @@ function AppSidebar() {
   const location = useLocation()
   const { state } = useSidebar()
   const collapsed = state === 'collapsed'
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   // Role-based access — read from JWT token since user.roles may be empty
   const getRolesFromToken = (): string[] => {
@@ -88,14 +89,18 @@ function AppSidebar() {
     } catch { return [] }
   }
   const userRoles = getRolesFromToken()
-  console.log('[AdminLayout] user roles from token:', userRoles)
-  const isCommerceOnly = userRoles.length > 0 &&
+  // Empty roles (no token / logout in progress) → treat as restricted to prevent flash
+  const isCommerceOnly = userRoles.length === 0 ||
     userRoles.every(r => r === 'commerce_manager' || r === 'manager')
-  console.log('[AdminLayout] isCommerceOnly:', isCommerceOnly)
   const showOperations = !isCommerceOnly
   const showCommerce = true
   const showAdmin = !isCommerceOnly
   const showComingSoon = !isCommerceOnly
+
+  const handleLogout = () => {
+    setIsLoggingOut(true)
+    adminLogout()
+  }
 
   const isActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(href + '/')
@@ -234,11 +239,14 @@ function AppSidebar() {
           )}
           {!collapsed && (
             <button
-              onClick={() => adminLogout()}
-              className="shrink-0 text-sidebar-muted hover:text-sidebar-primary transition-colors"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="shrink-0 text-sidebar-muted hover:text-sidebar-primary transition-colors disabled:opacity-40"
               title="Logout"
             >
-              <LogOut className="h-4 w-4" />
+              {isLoggingOut
+                ? <span className="text-[10px] text-sidebar-muted">Signing out…</span>
+                : <LogOut className="h-4 w-4" />}
             </button>
           )}
         </div>

@@ -46,8 +46,7 @@ const CompetitionDetail = () => {
       })
       .then(schedules => {
         if (!schedules) return;
-        const s = (schedules as ApiSchedule[]).find(s => s.status === "SCHEDULED" || s.is_active)
-          ?? (schedules as ApiSchedule[])[0]
+        const s = (schedules as ApiSchedule[]).find(s => s.status === "SCHEDULED")
           ?? null;
         setSchedule(s);
       })
@@ -67,7 +66,15 @@ const CompetitionDetail = () => {
     return next;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id, game?.draw_date, game?.draw_time]);
-  const { days, hours, minutes, seconds } = useCountdown(drawDate);
+  const { days, hours, minutes, seconds, total: timeTotal } = useCountdown(drawDate);
+
+  const salesCutoffDate = useMemo(() => {
+    if (!schedule?.scheduled_end) return drawDate;
+    const v = schedule.scheduled_end;
+    if (typeof v === "object" && "seconds" in v) return new Date((v as { seconds: number }).seconds * 1000);
+    return new Date(v as string);
+  }, [schedule?.scheduled_end, drawDate]);
+  const salesClosed = salesCutoffDate <= new Date() || timeTotal === 0;
 
   // Create tickets + fire Hubtel STK push
   const handleInitiatePayment = async () => {
@@ -173,6 +180,7 @@ const CompetitionDetail = () => {
   const total      = (qty * price).toFixed(2);
   const maxQty     = game.max_tickets_per_player || 10;
   const hasSchedule = !!schedule;
+  const isClosed = !schedule || schedule.status !== "SCHEDULED" || salesClosed;
   const timeLeft   = days > 0
     ? `${days}d ${String(hours).padStart(2,"0")}h`
     : `${String(hours).padStart(2,"0")}:${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}`;
@@ -198,7 +206,10 @@ const CompetitionDetail = () => {
 
           {/* Right panel */}
           <motion.div initial={{ opacity:0, x:20 }} animate={{ opacity:1, x:0 }} className="flex flex-col">
-            <span className="self-start px-3 py-1 rounded-full text-xs font-bold uppercase mb-4 bg-green-500/20 text-green-400">LIVE</span>
+            {isClosed
+              ? <span className="self-start px-3 py-1 rounded-full text-xs font-bold uppercase mb-4 bg-gray-500/20 text-gray-400">DRAW ENDED</span>
+              : <span className="self-start px-3 py-1 rounded-full text-xs font-bold uppercase mb-4 bg-green-500/20 text-green-400">LIVE</span>
+            }
             <h1 className="font-heading text-3xl md:text-4xl text-foreground mb-2">{game.name}</h1>
             {prizeLabel && <p className="text-primary font-semibold mb-2">🏆 {prizeLabel}</p>}
             {game.description && <p className="text-muted-foreground mb-5 text-sm">{game.description}</p>}
@@ -338,18 +349,22 @@ const CompetitionDetail = () => {
                     </span>
                   </div>
 
-                  {!hasSchedule && (
+                  {isClosed ? (
+                    <div className="text-xs text-gray-400 bg-gray-500/10 rounded-lg px-3 py-2 mb-3 text-center">
+                      This draw has ended — ticket sales are closed
+                    </div>
+                  ) : !hasSchedule ? (
                     <div className="text-xs text-yellow-400 bg-yellow-400/10 rounded-lg px-3 py-2 mb-3 text-center">
                       Ticket sales not yet open for this competition
                     </div>
-                  )}
+                  ) : null}
 
                   <button
                     onClick={() => { if (!isLoggedIn) { navigate("/sign-in"); return; } setPayState("momo_input"); }}
-                    disabled={!hasSchedule}
-                    className="w-full bg-primary text-white font-heading text-lg py-4 rounded-lg btn-glow hover:brightness-110 transition disabled:opacity-60"
+                    disabled={isClosed || !hasSchedule}
+                    className="w-full bg-primary text-white font-heading text-lg py-4 rounded-lg btn-glow hover:brightness-110 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {!isLoggedIn ? "SIGN IN TO BUY" : "BUY WITH MOBILE MONEY"}
+                    {isClosed ? "DRAW CLOSED" : !isLoggedIn ? "SIGN IN TO BUY" : "BUY WITH MOBILE MONEY"}
                   </button>
 
                   {!isLoggedIn && (

@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WinsRouteImport } from './routes/wins'
 import { Route as UssdSessionsRouteImport } from './routes/ussd-sessions'
 import { Route as TransactionsRouteImport } from './routes/transactions'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PlayersRouteImport } from './routes/players'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GamesRouteImport } from './routes/games'
+import { Route as EntriesRouteImport } from './routes/entries'
 import { Route as DrawsRouteImport } from './routes/draws'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
@@ -52,6 +54,11 @@ const TransactionsRoute = TransactionsRouteImport.update({
   path: '/transactions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PlayersRoute = PlayersRouteImport.update({
   id: '/players',
   path: '/players',
@@ -65,6 +72,11 @@ const LoginRoute = LoginRouteImport.update({
 const GamesRoute = GamesRouteImport.update({
   id: '/games',
   path: '/games',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EntriesRoute = EntriesRouteImport.update({
+  id: '/entries',
+  path: '/entries',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DrawsRoute = DrawsRouteImport.update({
@@ -177,9 +189,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
+  '/entries': typeof EntriesRoute
   '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
+  '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
   '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
@@ -206,9 +220,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
+  '/entries': typeof EntriesRoute
   '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
+  '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
   '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
@@ -236,9 +252,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/draws': typeof DrawsRoute
+  '/entries': typeof EntriesRoute
   '/games': typeof GamesRouteWithChildren
   '/login': typeof LoginRoute
   '/players': typeof PlayersRoute
+  '/settings': typeof SettingsRoute
   '/transactions': typeof TransactionsRoute
   '/ussd-sessions': typeof UssdSessionsRoute
   '/wins': typeof WinsRoute
@@ -267,9 +285,11 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/draws'
+    | '/entries'
     | '/games'
     | '/login'
     | '/players'
+    | '/settings'
     | '/transactions'
     | '/ussd-sessions'
     | '/wins'
@@ -296,9 +316,11 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/draws'
+    | '/entries'
     | '/games'
     | '/login'
     | '/players'
+    | '/settings'
     | '/transactions'
     | '/ussd-sessions'
     | '/wins'
@@ -325,9 +347,11 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/draws'
+    | '/entries'
     | '/games'
     | '/login'
     | '/players'
+    | '/settings'
     | '/transactions'
     | '/ussd-sessions'
     | '/wins'
@@ -355,9 +379,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   DrawsRoute: typeof DrawsRoute
+  EntriesRoute: typeof EntriesRoute
   GamesRoute: typeof GamesRouteWithChildren
   LoginRoute: typeof LoginRoute
   PlayersRoute: typeof PlayersRoute
+  SettingsRoute: typeof SettingsRoute
   TransactionsRoute: typeof TransactionsRoute
   UssdSessionsRoute: typeof UssdSessionsRoute
   WinsRoute: typeof WinsRoute
@@ -403,6 +429,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TransactionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/players': {
       id: '/players'
       path: '/players'
@@ -422,6 +455,13 @@ declare module '@tanstack/react-router' {
       path: '/games'
       fullPath: '/games'
       preLoaderRoute: typeof GamesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/entries': {
+      id: '/entries'
+      path: '/entries'
+      fullPath: '/entries'
+      preLoaderRoute: typeof EntriesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/draws': {
@@ -588,9 +628,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   DrawsRoute: DrawsRoute,
+  EntriesRoute: EntriesRoute,
   GamesRoute: GamesRouteWithChildren,
   LoginRoute: LoginRoute,
   PlayersRoute: PlayersRoute,
+  SettingsRoute: SettingsRoute,
   TransactionsRoute: TransactionsRoute,
   UssdSessionsRoute: UssdSessionsRoute,
   WinsRoute: WinsRoute,

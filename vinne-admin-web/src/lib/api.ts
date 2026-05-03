@@ -1,8 +1,9 @@
 import axios from 'axios'
+import { config } from '@/config'
 
 // Create an axios instance with default configuration
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1',
+  baseURL: config.api.baseUrl,
   timeout: 30000, // 30 seconds - increased to handle file uploads
   headers: {
     'Content-Type': 'application/json',
@@ -45,9 +46,8 @@ api.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token')
         if (refreshToken) {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1'
           const response = await axios.post(
-            `${apiUrl}/admin/auth/refresh`,
+            `${config.api.baseUrl}/admin/auth/refresh`,
             { refresh_token: refreshToken },
             { withCredentials: true }
           )

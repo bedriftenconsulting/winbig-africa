@@ -25,8 +25,8 @@ RUN find . -name ".env" -delete && find . -name "config.env" -delete && find . -
 
 # Build the binary with version information
 WORKDIR /app/services/api-gateway
-RUN GOPROXY=direct GONOSUMDB=* go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build \
+RUN GOWORK=off GOPROXY=https://proxy.golang.org,direct GONOSUMDB=* go mod download && \
+    GOWORK=off CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-X main.Version=${VERSION} \
               -X main.GitBranch=${GIT_BRANCH} \
               -X main.GitCommit=${GIT_HASH} \
