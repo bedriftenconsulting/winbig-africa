@@ -25,9 +25,13 @@ function randomChar() {
 
 function maskPhone(phone?: string) {
   if (!phone) return '***'
-  const s = phone.replace(/\D/g, '')
-  if (s.length < 6) return '****'
-  return s.slice(0, 3) + '****' + s.slice(-3)
+  if (phone.startsWith('+233')) return phone   // already correct, keep as-is (already masked by API)
+  // Masked local format "0XX****" → "+233X****"
+  if (phone.startsWith('0')) return '+233' + phone.slice(1)
+  // Full +233 digits
+  const digits = phone.replace(/\D/g, '')
+  if (digits.startsWith('233') && digits.length >= 12) return '+' + digits
+  return phone
 }
 
 // Star particle component
@@ -84,38 +88,90 @@ export default function DrawReveal() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const drawId = params.get('drawId')
-    const url = drawId
-      ? `${BASE}/draws/${drawId}/results`
-      : `${BASE}/public/winners?limit=1`
 
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        // /public/winners returns { data: { winners: [...] } }
-        // /draws/{id}/results returns { data: { winning_tickets: [...] } }
-        const winners = d?.data?.winners ?? d?.data?.winning_tickets ?? d?.data?.tickets ?? []
-        const list = Array.isArray(winners) ? winners : []
-        if (list.length === 0) {
+    const resolveWinner = async () => {
+      try {
+        // Always use the public winners endpoint (draw results endpoint requires auth)
+        const winnersRes = await fetch(`${BASE}/public/winners?limit=20`)
+        const winnersData = await winnersRes.json()
+        const allWinners: any[] = winnersData?.data?.winners ?? winnersData?.winners ?? []
+
+        if (allWinners.length === 0) {
           setError('No draw results available yet.')
           setStage('ready')
           return
         }
-        const raw = list[0]
-        // Normalise field names from both endpoints
+
+        let raw: any = null
+
+        if (drawId) {
+          // Find the draw info from public completed draws to match against
+          try {
+            const drawsRes = await fetch(`${BASE}/public/draws/completed`)
+            const drawsData = await drawsRes.json()
+            const draws: any[] = drawsData?.data?.draws ?? []
+            const matchedDraw = draws.find((d: any) => d.draw_id === drawId)
+
+            if (matchedDraw) {
+              // Match winner by game_name + draw_number
+              raw = allWinners.find(
+                (w: any) =>
+                  (w.game_name === matchedDraw.game_name || w.prize === matchedDraw.game_name) &&
+                  w.draw_number === matchedDraw.draw_number
+              )
+              // Fallback: match by game_name only
+              if (!raw) {
+                raw = allWinners.find(
+                  (w: any) => w.game_name === matchedDraw.game_name || w.prize === matchedDraw.game_name
+                )
+              }
+            }
+          } catch {
+            // ignore draw lookup failure, fall through to first winner
+          }
+        }
+
+        // Final fallback: first non-test winner (skip entries with 'test' in game name)
+        if (!raw) {
+          raw = allWinners.find(
+            (w: any) => !(w.game_name || w.prize || '').toLowerCase().includes('test')
+          ) ?? allWinners[0]
+        }
+
+        if (!raw) {
+          setError('No draw results available yet.')
+          setStage('ready')
+          return
+        }
+
+        // Normalise phone to +233 format for display
+        // API returns name field as already-masked local format e.g. "0256****"
+        const rawPhone: string = raw.customer_phone || raw.phone_number || raw.phone || raw.name || ''
+        const normalisePhone = (p: string): string => {
+          if (p.startsWith('+233')) return p
+          if (p.startsWith('0')) return '+233' + p.slice(1)
+          const digits = p.replace(/\D/g, '')
+          if (digits.startsWith('233') && digits.length >= 12) return '+' + digits
+          return p
+        }
+        const phoneForDisplay = rawPhone ? normalisePhone(rawPhone) : ''
+
         const won: Winner = {
           serial_number: raw.serial_number || raw.ticket_serial || raw.ticket_number,
           game_name: raw.game_name || raw.prize || raw.game_code,
-          customer_phone: raw.customer_phone || raw.phone_number || raw.phone,
-          customer_name: raw.customer_name || raw.player_name || raw.name,
+          customer_phone: phoneForDisplay,
+          customer_name: raw.customer_name || raw.player_name,
           draw_number: raw.draw_number,
         }
         setWinner(won)
         setStage('ready')
-      })
-      .catch(() => {
+      } catch {
         setError('Could not load draw results')
         setStage('ready')
-      })
+      }
+    }
+
+    resolveWinner()
   }, [])
 
   const fireConfetti = useCallback(() => {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"os"
 	"time"
 
 	notificationv1 "github.com/randco/randco-microservices/proto/notification/v1"
@@ -49,15 +50,26 @@ func (s *otpService) GenerateAndSendOTP(ctx context.Context, phoneNumber, purpos
 		return fmt.Errorf("failed to create OTP record: %w", err)
 	}
 
-	err = s.sendOTPSMS(ctx, phoneNumber, code, purpose, otp.ID.String())
-	if err != nil {
-		return fmt.Errorf("failed to send OTP SMS: %w", err)
+	if os.Getenv("DEV_SKIP_OTP") != "true" {
+		err = s.sendOTPSMS(ctx, phoneNumber, code, purpose, otp.ID.String())
+		if err != nil {
+			return fmt.Errorf("failed to send OTP SMS: %w", err)
+		}
 	}
 
 	return nil
 }
 
 func (s *otpService) VerifyOTP(ctx context.Context, sessionID, code, purpose string) error {
+	if os.Getenv("DEV_SKIP_OTP") == "true" {
+		// In local dev mode, accept any code — just mark the phone verified via the latest OTP record
+		if latestOTP, err := s.otpRepo.GetByPhoneAndPurpose(ctx, sessionID, purpose); err == nil && latestOTP != nil {
+			_ = s.otpRepo.MarkAsUsed(ctx, latestOTP.ID)
+			_ = s.playerRepo.VerifyPhoneNumber(ctx, latestOTP.PhoneNumber)
+		}
+		return nil
+	}
+
 	otp, err := s.otpRepo.GetByCode(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to get OTP: %w", err)

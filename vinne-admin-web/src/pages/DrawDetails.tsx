@@ -166,12 +166,14 @@ const DrawDetails: React.FC = () => {
   const [quickPhone, setQuickPhone] = useState('')
   const [quickQty, setQuickQty] = useState(1)
   const [quickSubmitting, setQuickSubmitting] = useState(false)
-  const [quickResult, setQuickResult] = useState<{ tickets: string[]; sms_sent: boolean } | null>(null)
+  const [quickResult, setQuickResult] = useState<{ tickets: string[]; sms_sent: boolean; sms_requested: boolean } | null>(null)
   const [quickError, setQuickError] = useState('')
   const [bulkRawText, setBulkRawText] = useState('')
   const [bulkParsed, setBulkParsed] = useState<{ phone: string; name: string; quantity: number }[]>([])
   const [bulkParseError, setBulkParseError] = useState('')
   const [bulkUploading, setBulkUploading] = useState(false)
+  const [quickSendSms, setQuickSendSms] = useState(false)
+  const [bulkSendSms, setBulkSendSms] = useState(false)
   const [bulkResult, setBulkResult] = useState<{
     total_entries: number
     tickets_created: number
@@ -308,12 +310,12 @@ const DrawDetails: React.FC = () => {
       const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ entries: [{ phone: quickPhone.trim(), name: quickName.trim(), quantity: quickQty }] }),
+        body: JSON.stringify({ entries: [{ phone: quickPhone.trim(), name: quickName.trim(), quantity: quickQty }], send_sms: quickSendSms }),
       })
       const data = await res.json()
       const result = (data?.data?.results ?? data?.results)?.[0]
       if (!res.ok || !result) { setQuickError(data?.message || 'Failed to create entries'); return }
-      setQuickResult({ tickets: result.tickets || [], sms_sent: result.sms_sent })
+      setQuickResult({ tickets: result.tickets || [], sms_sent: result.sms_sent, sms_requested: quickSendSms })
       toast({ title: 'Entries Created', description: `${result.tickets?.length} entr${result.tickets?.length === 1 ? 'y' : 'ies'} sent to ${quickPhone.trim()}` })
     } catch (err) {
       setQuickError('Network error: ' + String(err))
@@ -2573,11 +2575,17 @@ const DrawDetails: React.FC = () => {
                         </p>
                       )}
 
-                      <Button onClick={handleQuickAdd} disabled={quickSubmitting || !quickPhone.trim()} className="gap-2">
-                        {quickSubmitting
-                          ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
-                          : <><Send className="h-4 w-4" /> Create & Send SMS</>}
-                      </Button>
+                      <div className="flex items-center gap-3">
+                        <Button onClick={handleQuickAdd} disabled={quickSubmitting || !quickPhone.trim()} className="gap-2">
+                          {quickSubmitting
+                            ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
+                            : <><Send className="h-4 w-4" /> Create Entries</>}
+                        </Button>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer select-none whitespace-nowrap">
+                          <input type="checkbox" checked={quickSendSms} onChange={e => setQuickSendSms(e.target.checked)} className="h-4 w-4 rounded" />
+                          Send SMS
+                        </label>
+                      </div>
                     </>
                   ) : (
                     <div className="space-y-3">
@@ -2587,8 +2595,8 @@ const DrawDetails: React.FC = () => {
                           <span className="font-semibold text-green-800">
                             {quickQty} {quickQty === 1 ? 'Entry' : 'Entries'} Created
                           </span>
-                          <Badge className={`ml-auto ${quickResult.sms_sent ? 'bg-green-500 hover:bg-green-500' : 'bg-red-500 hover:bg-red-500'} text-white`}>
-                            {quickResult.sms_sent ? 'SMS Sent ✓' : 'SMS Failed'}
+                          <Badge className={`ml-auto text-white ${quickResult.sms_sent ? 'bg-green-500 hover:bg-green-500' : quickResult.sms_requested ? 'bg-red-500 hover:bg-red-500' : 'bg-gray-400 hover:bg-gray-400'}`}>
+                            {quickResult.sms_sent ? 'SMS Sent ✓' : quickResult.sms_requested ? 'SMS Failed' : 'No SMS'}
                           </Badge>
                         </div>
                         <p className="text-sm text-green-700 mb-3">
@@ -2646,31 +2654,37 @@ const DrawDetails: React.FC = () => {
                         </Button>
 
                         {bulkParsed.length > 0 && (
-                          <Button disabled={bulkUploading} onClick={async () => {
-                            setBulkUploading(true)
-                            try {
-                              const token = localStorage.getItem('access_token')
-                              const apiBase = import.meta.env.VITE_API_URL || '/api/v1'
-                              const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/bulk-upload`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                body: JSON.stringify({ entries: bulkParsed }),
-                              })
-                              const text = await res.text()
-                              let data: Record<string, unknown>
-                              try { data = JSON.parse(text) } catch { setBulkParseError(`Server error (${res.status}): ${text.slice(0, 200)}`); return }
-                              if (!res.ok) { setBulkParseError((data?.message as string) || `Upload failed (${res.status})`); return }
-                              setBulkResult((data?.data ?? data) as typeof bulkResult)
-                            } catch (err) {
-                              setBulkParseError('Network error: ' + String(err))
-                            } finally {
-                              setBulkUploading(false)
-                            }
-                          }} className="gap-2">
-                            {bulkUploading
-                              ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
-                              : <><Send className="h-4 w-4" /> Create & Send SMS ({bulkParsed.reduce((s, e) => s + e.quantity, 0)} entries)</>}
-                          </Button>
+                          <>
+                            <Button disabled={bulkUploading} onClick={async () => {
+                              setBulkUploading(true)
+                              try {
+                                const token = localStorage.getItem('access_token')
+                                const apiBase = import.meta.env.VITE_API_URL || '/api/v1'
+                                const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/bulk-upload`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                  body: JSON.stringify({ entries: bulkParsed, send_sms: bulkSendSms }),
+                                })
+                                const text = await res.text()
+                                let data: Record<string, unknown>
+                                try { data = JSON.parse(text) } catch { setBulkParseError(`Server error (${res.status}): ${text.slice(0, 200)}`); return }
+                                if (!res.ok) { setBulkParseError((data?.message as string) || `Upload failed (${res.status})`); return }
+                                setBulkResult((data?.data ?? data) as typeof bulkResult)
+                              } catch (err) {
+                                setBulkParseError('Network error: ' + String(err))
+                              } finally {
+                                setBulkUploading(false)
+                              }
+                            }} className="gap-2">
+                              {bulkUploading
+                                ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
+                                : <><Send className="h-4 w-4" /> Create Entries ({bulkParsed.reduce((s, e) => s + e.quantity, 0)})</>}
+                            </Button>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                              <input type="checkbox" checked={bulkSendSms} onChange={e => setBulkSendSms(e.target.checked)} className="h-4 w-4 rounded" />
+                              Send SMS
+                            </label>
+                          </>
                         )}
                       </div>
 

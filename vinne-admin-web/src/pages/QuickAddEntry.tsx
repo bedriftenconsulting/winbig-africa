@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator'
 import { toast } from '@/hooks/use-toast'
 import { drawService } from '@/services/draws'
 
-type QuickResult = { tickets: string[]; sms_sent: boolean }
+type QuickResult = { tickets: string[]; sms_sent: boolean; sms_requested: boolean }
 type BulkResult = {
   tickets_created: number
   sms_sent: number
@@ -31,10 +31,11 @@ export default function QuickAddEntry() {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [qty, setQty] = useState(1)
+  const [sendSms, setSendSms] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [quickResult, setQuickResult] = useState<QuickResult | null>(null)
   const [quickError, setQuickError] = useState('')
-  const [history, setHistory] = useState<{ name: string; phone: string; qty: number; tickets: string[]; sms_sent: boolean }[]>([])
+  const [history, setHistory] = useState<{ name: string; phone: string; qty: number; tickets: string[]; sms_sent: boolean; sms_requested: boolean }[]>([])
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
 
   // Bulk Import state
@@ -47,11 +48,21 @@ export default function QuickAddEntry() {
 
   useEffect(() => {
     drawService.getDraws().then(data => {
+      const now = new Date()
       const active = (data?.draws ?? []).filter((d: Record<string, unknown>) => {
         const s = String(d.status ?? '').toLowerCase()
         const excluded = ['cancelled', 'completed', 'failed', '3', '4', '5']
         if (excluded.some(x => s.includes(x))) return false
-        return s.includes('scheduled') || s.includes('in_progress') || s === '1' || s === '2'
+        if (!s.includes('scheduled') && !s.includes('in_progress') && s !== '1' && s !== '2') return false
+        // Exclude draws whose scheduled time has already passed
+        const st = d.scheduled_time as { seconds?: number } | string | null | undefined
+        if (st) {
+          let drawDate: Date | null = null
+          if (typeof st === 'string') drawDate = new Date(st)
+          else if (typeof st === 'object' && st !== null && 'seconds' in st) drawDate = new Date((st.seconds as number) * 1000)
+          if (drawDate && !isNaN(drawDate.getTime()) && drawDate < now) return false
+        }
+        return true
       })
       const mapped = active.map((d: Record<string, unknown>) => {
         const gameName = (d.game_name || d.draw_name || d.name || d.id) as string
@@ -85,12 +96,12 @@ export default function QuickAddEntry() {
       const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ entries: [{ phone: pendingConfirm.phone, name: pendingConfirm.name, quantity: pendingConfirm.qty }] }),
+        body: JSON.stringify({ entries: [{ phone: pendingConfirm.phone, name: pendingConfirm.name, quantity: pendingConfirm.qty }], send_sms: sendSms }),
       })
       const data = await res.json()
       const r = (data?.data?.results ?? data?.results)?.[0]
       if (!res.ok || !r) { setQuickError(data?.message || 'Failed to create entries'); setPendingConfirm(null); return }
-      const result: QuickResult = { tickets: r.tickets ?? [], sms_sent: r.sms_sent }
+      const result: QuickResult = { tickets: r.tickets ?? [], sms_sent: r.sms_sent, sms_requested: sendSms }
       setQuickResult(result)
       setHistory(prev => [{ name: pendingConfirm.name || pendingConfirm.phone, phone: pendingConfirm.phone, qty: pendingConfirm.qty, ...result }, ...prev])
       setPendingConfirm(null)
@@ -114,7 +125,7 @@ export default function QuickAddEntry() {
       const res = await fetch(`${apiBase}/admin/draws/${drawId}/tickets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ entries: bulkParsed }),
+        body: JSON.stringify({ entries: bulkParsed, send_sms: sendSms }),
       })
       const text = await res.text()
       let data: Record<string, unknown>
@@ -156,6 +167,12 @@ export default function QuickAddEntry() {
           Draw: <span className="font-medium text-foreground">{draws[0].label}</span>
         </p>
       )}
+      {draws.length === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          No upcoming draws available. All scheduled draws have passed. To add entries to a past draw, use the Draw Detail page.
+        </div>
+      )}
 
       <Card>
         <CardContent className="pt-5 space-y-5">
@@ -184,8 +201,8 @@ export default function QuickAddEntry() {
                       <span className="font-semibold text-green-800">
                         {pendingConfirm?.qty ?? qty} {(pendingConfirm?.qty ?? qty) === 1 ? 'Entry' : 'Entries'} Created
                       </span>
-                      <Badge className={`ml-auto text-white ${quickResult.sms_sent ? 'bg-green-500 hover:bg-green-500' : 'bg-red-500 hover:bg-red-500'}`}>
-                        {quickResult.sms_sent ? 'SMS Sent ✓' : 'SMS Failed'}
+                      <Badge className={`ml-auto text-white ${quickResult.sms_sent ? 'bg-green-500 hover:bg-green-500' : quickResult.sms_requested ? 'bg-red-500 hover:bg-red-500' : 'bg-gray-400 hover:bg-gray-400'}`}>
+                        {quickResult.sms_sent ? 'SMS Sent ✓' : quickResult.sms_requested ? 'SMS Failed' : 'No SMS'}
                       </Badge>
                     </div>
                     <p className="text-sm text-green-700 mb-3">
@@ -313,14 +330,20 @@ export default function QuickAddEntry() {
                     </p>
                   )}
 
-                  <Button
-                    onClick={handleQuickReview}
-                    disabled={!phone.trim() || !drawId}
-                    className="w-full gap-2"
-                    size="lg"
-                  >
-                    <Send className="h-4 w-4" /> Review & Create
-                  </Button>
+                  <div className="flex items-center gap-4">
+                    <Button
+                      onClick={handleQuickReview}
+                      disabled={!phone.trim() || !drawId}
+                      className="flex-1 gap-2"
+                      size="lg"
+                    >
+                      <Send className="h-4 w-4" /> Review & Create
+                    </Button>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none whitespace-nowrap">
+                      <input type="checkbox" checked={sendSms} onChange={e => setSendSms(e.target.checked)} className="h-4 w-4 rounded" />
+                      Send SMS
+                    </label>
+                  </div>
                 </>
               )}
             </div>
@@ -369,9 +392,13 @@ export default function QuickAddEntry() {
                         onClick={() => setBulkConfirmOpen(true)}
                         className="gap-2"
                       >
-                        <Send className="h-4 w-4" /> Create & Send SMS ({bulkTotalEntries} entries)
+                        <Send className="h-4 w-4" /> Create Entries ({bulkTotalEntries})
                       </Button>
                     )}
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input type="checkbox" checked={sendSms} onChange={e => setSendSms(e.target.checked)} className="h-4 w-4 rounded" />
+                      Send SMS
+                    </label>
                   </div>
 
                   {bulkParsed.length > 0 && (
@@ -486,7 +513,9 @@ export default function QuickAddEntry() {
                 </div>
                 {h.sms_sent
                   ? <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                  : <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />}
+                  : h.sms_requested
+                    ? <AlertCircle className="h-4 w-4 text-red-400 shrink-0" />
+                    : <XCircle className="h-4 w-4 text-gray-300 shrink-0" />}
               </div>
             ))}
           </div>

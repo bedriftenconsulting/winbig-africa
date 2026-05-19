@@ -237,7 +237,7 @@ services:
       dockerfile: ./services/service-admin-management/Dockerfile.dev
     ports:
       - "8085:8080"  # HTTP port for metrics/health
-      - "51057:51057"  # gRPC port
+      # gRPC port 51057 not bound to host (Windows reserved range 50976-51075; internal Docker network only)
     environment:
       SERVICE_NAME: service-admin-management
       DATABASE_HOST: service-admin-management-db
@@ -297,8 +297,7 @@ services:
     build:
       context: .
       dockerfile: ./services/service-agent-auth/Dockerfile.dev
-    ports:
-      - "51052:51052"
+    # gRPC port 51052 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-agent-auth
       SERVER_PORT: 51052
@@ -355,7 +354,7 @@ services:
       dockerfile: ./services/service-agent-management/Dockerfile.dev
     ports:
       - "8086:8080"  # HTTP port for metrics/health
-      - "51056:51056"  # gRPC port
+      # gRPC port 51056 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-agent-management
       DATABASE_HOST: service-agent-management-db
@@ -416,7 +415,7 @@ services:
       dockerfile: ./services/service-wallet/Dockerfile.dev
     ports:
       - "8087:8080"  # HTTP port for metrics/health
-      - "51059:51059"  # gRPC port
+      # gRPC port 51059 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-wallet
       DATABASE_HOST: service-wallet-db
@@ -475,7 +474,7 @@ services:
       dockerfile: ./services/service-terminal/Dockerfile.dev
     ports:
       - "8088:8080"  # HTTP port for metrics/health
-      - "51054:51054"  # gRPC port
+      # gRPC port 51054 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-terminal
       DATABASE_HOST: service-terminal-db
@@ -534,7 +533,7 @@ services:
       dockerfile: ./services/service-payment/Dockerfile.dev
     ports:
       - "8089:8080"  # HTTP port for metrics/health
-      - "51061:51061"  # gRPC port
+      # gRPC port 51061 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-payment
       DATABASE_HOST: service-payment-db
@@ -601,7 +600,7 @@ services:
       dockerfile: ./services/service-game/Dockerfile.dev
     ports:
       - "8090:8080"
-      - "51053:51053"
+      # gRPC port 51053 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-game
       ENVIRONMENT: local
@@ -667,7 +666,7 @@ services:
       dockerfile: ./services/service-draw/Dockerfile.dev
     ports:
       - "8091:8080"
-      - "51060:51060"
+      # gRPC port 51060 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-draw
       ENVIRONMENT: local
@@ -707,7 +706,7 @@ services:
     environment:
       POSTGRES_DB: ticket_service
       POSTGRES_USER: ticket
-      POSTGRES_PASSWORD: ticket123
+      POSTGRES_PASSWORD: "#kettic@333!"
     volumes:
       - postgres-ticket-data:/var/lib/postgresql/data
       - ./services/service-ticket/migrations:/docker-entrypoint-initdb.d
@@ -732,7 +731,7 @@ services:
       dockerfile: ./services/service-ticket/Dockerfile.dev
     ports:
       - "8092:8080"
-      - "51062:51062"
+      # gRPC port 51062 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-ticket
       SERVER_PORT: 51062
@@ -804,7 +803,7 @@ services:
       dockerfile: ./services/service-notification/Dockerfile.dev
     ports:
       - "8093:8080"
-      - "51063:51063"
+      # gRPC port 51063 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-notification
       SERVER_PORT: 51063
@@ -863,7 +862,7 @@ services:
       dockerfile: ./services/service-player/Dockerfile.dev
     ports:
       - "8094:8080"
-      - "51064:51064"
+      # gRPC port 51064 not bound to host (Windows reserved range; internal Docker network only)
     environment:
       SERVICE_NAME: service-player
       SERVER_PORT: 51064
@@ -882,6 +881,7 @@ services:
       KAFKA_BROKERS: kafka:29092
       JAEGER_ENDPOINT: http://jaeger:4318
       TRACING_JAEGER_ENDPOINT: http://jaeger:4318
+      DEV_SKIP_OTP: "true"
       SERVICES_NOTIFICATION_SERVICE: service-notification:51063
       SERVICES_WALLET_SERVICE: service-wallet:51059
       SERVICES_PAYMENT_SERVICE: service-payment:51061

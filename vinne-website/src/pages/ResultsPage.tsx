@@ -27,13 +27,27 @@ interface CompletedDraw {
   prize_pool?: number;
 }
 
+// Convert any Ghana phone (masked or not) to +233 display format
+// e.g. "0234****" → "+2332****", "0241234567" → "+233241234567"
+const toPlus233 = (p: string): string => {
+  if (!p) return p
+  if (p.startsWith('+233')) return p
+  // Already full digits starting with 233
+  if (/^233\d/.test(p)) return '+' + p
+  // Masked local format "0XX****" → "+233X****" (drop leading 0, prepend +233)
+  if (p.startsWith('0')) return '+233' + p.slice(1)
+  return p
+}
+
 const maskPhone = (phone: string) => {
   if (!phone || phone.length < 6) return "****";
-  return phone.slice(0, 3) + "****" + phone.slice(-3);
+  return toPlus233(phone);
 };
 
 const maskName = (name: string) => {
   if (!name) return "Anonymous";
+  // If it looks like a phone number (starts with 0, +, or 233), convert to +233 format
+  if (/^[0+]/.test(name.trim()) || /^233/.test(name.trim())) return toPlus233(name.trim())
   const parts = name.trim().split(" ");
   return parts[0] + (parts[1] ? " " + parts[1][0] + "." : "");
 };
@@ -52,19 +66,27 @@ const ResultsPage = () => {
     ])
       .then(([wData, dData]) => {
         const rawWinners = wData.winners || wData.data?.winners || [];
-        // Normalise API field names to interface fields
-        setWinners(rawWinners.map((w: Record<string, any>) => ({
-          id: w.id || w.ticket_id,
-          player_name: w.player_name || w.name || '',
-          phone_number: w.phone_number || w.phone || '',
-          ticket_serial: w.ticket_serial || w.serial_number || '',
-          game_name: w.game_name || w.prize || '',
-          game_code: w.game_code || '',
-          prize_amount: w.prize_amount || w.winning_amount || 0,
-          prize_description: w.prize_description || w.prize || '',
-          draw_date: w.draw_date || w.won_at || '',
-          position: w.position || 1,
-        })));
+        // Filter out test entries, then normalise API field names
+        const isTestEntry = (w: Record<string, any>) => {
+          const name = (w.game_name || w.prize || '').toLowerCase()
+          return name.includes('test') || name.includes('quick_test')
+        }
+        setWinners(
+          rawWinners
+            .filter((w: Record<string, any>) => !isTestEntry(w))
+            .map((w: Record<string, any>) => ({
+              id: w.id || w.ticket_id,
+              player_name: w.player_name || w.name || '',
+              phone_number: w.phone_number || w.phone || '',
+              ticket_serial: w.ticket_serial || w.serial_number || '',
+              game_name: w.game_name || w.prize || '',
+              game_code: w.game_code || '',
+              prize_amount: w.prize_amount || w.winning_amount || 0,
+              prize_description: w.prize_description || w.prize || '',
+              draw_date: w.draw_date || w.won_at || '',
+              position: w.position || 1,
+            }))
+        );
         setDraws(dData.draws || dData.data?.draws || []);
       })
       .catch(() => {})
@@ -116,9 +138,10 @@ const ResultsPage = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Live Reveal button — opens the fullscreen draw reveal page */}
+              {/* Live Reveal buttons — opens the fullscreen draw reveal page */}
+              {/* iPhone 17 Pro — Draw #2 (the real active draw) */}
               <button
-                onClick={() => window.open("/draw-reveal", "_blank")}
+                onClick={() => window.open("/draw-reveal?drawId=59ad83f5-499c-4113-9292-1152b93f92c0", "_blank")}
                 className="w-full flex items-center justify-center gap-3 py-4 rounded-xl font-bold text-base tracking-wide transition-all active:scale-95"
                 style={{
                   background: "linear-gradient(135deg, #fde047, #f59e0b)",
@@ -127,7 +150,15 @@ const ResultsPage = () => {
                 }}
               >
                 <Tv2 size={20} />
-                Open Live Draw Reveal Screen
+                🏆 Reveal iPhone 17 Pro Winner (Draw #2)
+              </button>
+              {/* Generic latest winner fallback */}
+              <button
+                onClick={() => window.open("/draw-reveal", "_blank")}
+                className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-semibold text-sm tracking-wide transition-all active:scale-95 border border-white/20 text-white/60 hover:border-white/40 hover:text-white/80"
+              >
+                <Tv2 size={16} />
+                Open Latest Draw Reveal Screen
               </button>
 
               {winners.map((w, i) => (

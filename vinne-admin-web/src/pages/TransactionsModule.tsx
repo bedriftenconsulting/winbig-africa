@@ -30,6 +30,7 @@ interface UssdTicket {
   game_type: 'ACCESS_PASS' | 'DRAW_ENTRY'
   game_name: string
   customer_phone: string
+  customer_name?: string
   unit_price: number
   total_amount: number
   payment_status: string
@@ -45,6 +46,7 @@ interface Transaction {
   momo_tx_id: string          // Hubtel payment_reference
   type: string                // "1-Day Pass" | "2-Day Pass" | "Extra WinBig (N)"
   phone: string               // MSISDN
+  name: string                // first attendee name
   amount: number              // pesewas — SUM(unit_price)
   gateway: string             // "MTN MoMo" | "Telecel Cash" | "AirtelTigo Money"
   date: string
@@ -127,13 +129,15 @@ async function fetchCompletedTransactions(): Promise<Transaction[]> {
     for (const [ref, tickets] of byRef) {
       const rep = tickets[0]
       const isAdmin = ref.startsWith('admin::')
+      const isCarpark = tickets.some(t => t.serial_number?.startsWith('CP-ACC-'))
       txns.push({
         payment_ref:  isAdmin ? '' : ref,
         momo_tx_id:   rep.payment_reference || '',
         type:         deriveType(tickets),
         phone:        rep.customer_phone,
+        name:         rep.customer_name || '',
         amount:       tickets.reduce((s, t) => s + Number(t.unit_price || 0), 0),
-        gateway:      isAdmin ? 'Admin Upload' : detectGateway(rep.customer_phone),
+        gateway:      isCarpark ? 'Carpark Import' : isAdmin ? 'Admin Upload' : detectGateway(rep.customer_phone),
         date:         rep.paid_at || rep.created_at,
         tickets,
       })
@@ -154,6 +158,7 @@ function GatewayBadge({ gateway }: { gateway: string }) {
     'AirtelTigo Money': 'bg-blue-100 text-blue-800 border-blue-200',
     'Hubtel MoMo':      'bg-purple-100 text-purple-800 border-purple-200',
     'Admin Upload':     'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'Carpark Import':   'bg-orange-100 text-orange-800 border-orange-200',
   }
   return (
     <Badge className={colours[gateway] ?? 'bg-gray-100 text-gray-800'}>
@@ -193,8 +198,16 @@ export default function TransactionsModule() {
       r = r.filter(t =>
         (t.payment_ref ?? '').toLowerCase().includes(s) ||
         (t.momo_tx_id ?? '').toLowerCase().includes(s) ||
-        (t.phone ?? '').includes(s)
+        (t.phone ?? '').includes(s) ||
+        t.tickets.some(tk => (tk.customer_name ?? '').toLowerCase().includes(s))
       )
+      // Exact payment_ref match floats to top; otherwise keep newest-first order
+      r = [...r].sort((a, b) => {
+        const aExact = (a.payment_ref ?? '').toLowerCase() === s ? 0 : 1
+        const bExact = (b.payment_ref ?? '').toLowerCase() === s ? 0 : 1
+        if (aExact !== bExact) return aExact - bExact
+        return new Date(b.date).getTime() - new Date(a.date).getTime()
+      })
     }
     return r
   }, [allTxns, typeFilter, search])
@@ -279,7 +292,7 @@ export default function TransactionsModule() {
               <div className="relative mt-1">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Phone, payment ref, MoMo TX ID..."
+                  placeholder="Name, phone, payment ref, MoMo TX ID..."
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPage(1) }}
                   className="pl-8"
@@ -357,7 +370,10 @@ export default function TransactionsModule() {
                           {tx.momo_tx_id ? tx.momo_tx_id.slice(0, 14) + '…' : '—'}
                         </TableCell>
                         <TableCell><TypeBadge type={tx.type} /></TableCell>
-                        <TableCell className="font-mono text-sm">{tx.phone}</TableCell>
+                        <TableCell>
+                          {tx.name && <p className="text-sm font-medium leading-tight">{tx.name}</p>}
+                          <p className="font-mono text-xs text-muted-foreground">{tx.phone}</p>
+                        </TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(tx.amount)}</TableCell>
                         <TableCell><GatewayBadge gateway={tx.gateway} /></TableCell>
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
@@ -387,8 +403,9 @@ export default function TransactionsModule() {
                                     <TypeBadge type={tx.type} />
                                   </div>
                                   <div>
-                                    <p className="text-xs text-muted-foreground">Player (MSISDN)</p>
-                                    <p className="font-mono">{tx.phone}</p>
+                                    <p className="text-xs text-muted-foreground">Player</p>
+                                    {tx.name && <p className="font-medium">{tx.name}</p>}
+                                    <p className="font-mono text-sm">{tx.phone}</p>
                                   </div>
                                   <div>
                                     <p className="text-xs text-muted-foreground">Total Amount</p>
